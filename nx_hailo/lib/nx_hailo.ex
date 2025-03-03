@@ -5,25 +5,32 @@ defmodule NxHailo do
 
   alias Evision, as: CV
 
-  @doc """
-  Hello world.
+  def get_video_capture do
+    cap = CV.VideoCapture.videoCapture()
+    # Force the buffer size to 1 so that we can easily get
+    # the frame that the camera currently is seeing.
+    CV.VideoCapture.set(cap, CV.Constant.cv_CAP_PROP_BUFFERSIZE(), 1)
 
-  ## Examples
-
-      iex> NxHailo.hello()
-      :world
-
-  """
-  def hello do
-    :world
+    cap
   end
 
-  def get_video_capture, do: CV.VideoCapture.videoCapture()
+  @spec get_realtime_frame(CV.VideoCapture.t()) :: CV.Mat.t()
+  def get_realtime_frame(capture) do
+    # This assumes that the buffer size is 1
+    # so we grab the frame in the queue, which is outdated,
+    # and then read the new frame, which is "around now".
 
-  def get_frame(capture) do
-    mat = CV.VideoCapture.read(capture)
+    # grab will consume the frame without all of the decoding overhead.
+    # retrieve could decode said frame, but seeing that we want to
+    # just drop this one, we can then read the next one (which is
+    # effectively the same as grab+retrieve).
+    true = CV.VideoCapture.grab(capture)
 
-    CV.Mat.to_nx(mat)
-    |> Nx.backend_transfer({EXLA.Backend, client: :host})
+    %CV.Mat{} = mat = CV.VideoCapture.read(capture)
+
+    # TODO: We might want to convert this to a tensor directly,
+    # but given that we don't have any actual operation using this function,
+    # returning the mat is more flexible.
+    mat
   end
 end
