@@ -52,12 +52,9 @@ defmodule NxHailo.MixProject do
       # changes to your application are needed.
       {:nerves_system_rpi5, "~> 0.2", runtime: false, targets: :rpi5},
       {:hailo_rpi5,
-       path: "../hailo_rpi5",
-       runtime: false,
-       targets: :hailo_rpi5,
-       nerves: [compile: true]},
-       {:evision, "~> 0.2"},
-       {:exla, "~> 0.9.0"}
+       path: "../hailo_rpi5", runtime: false, targets: :hailo_rpi5, nerves: [compile: true]},
+      {:evision, "~> 0.2"},
+      {:exla, "~> 0.9.0"}
     ]
   end
 
