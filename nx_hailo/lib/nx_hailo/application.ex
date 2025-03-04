@@ -9,6 +9,13 @@ defmodule NxHailo.Application do
   def start(_type, _args) do
     children =
       [
+        NxHailoWeb.Telemetry,
+        {DNSCluster, query: Application.get_env(:nx_hailo, :dns_cluster_query) || :ignore},
+        {Phoenix.PubSub, name: NxHailo.PubSub},
+        # Start a worker by calling: NxHailo.Worker.start_link(arg)
+        # {NxHailo.Worker, arg},
+        # Start to serve requests, typically the last entry
+        NxHailoWeb.Endpoint
         # Children for all targets
         # Starts a worker by calling: NxHailo.Worker.start_link(arg)
         # {NxHailo.Worker, arg},
