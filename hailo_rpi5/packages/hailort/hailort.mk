@@ -4,8 +4,8 @@
 #
 ################################################################################i
 
-HAILORT_VERSION = v4.18.0-add-nerves
-HAILORT_SITE = https://github.com/lawik/hailort.git
+HAILORT_VERSION = v4.20.0-build-nerves
+HAILORT_SITE = https://github.com/cocoa-xu/hailort.git
 HAILORT_SITE_METHOD = git
 HAILORT_GIT_SUBMODULES = YES
 HAILORT_LICENSE = MIT
