@@ -23,3 +23,7 @@ export EVISION_PREFER_PRECOMPILED=false
 - `sudo chown $USER:disk <sd card device>` to remove the need for `sudo`
 - `mix firmware`
 - `mix burn`
+
+- For `mix upload`, use `mix upload <ip>`, because UTM lives in a different subnet and won't resolve `nerves.local`. Use `ping nerves.local` on the host OS to discover the IP address.
+
+- To access the device from the host machine, copy over the SSH keys to the host and use `ssh -i <non .pub key path> nerves.local`
