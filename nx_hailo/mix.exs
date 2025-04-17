@@ -13,7 +13,7 @@ defmodule NxHailo.MixProject do
       app: @app,
       version: @version,
       elixir: "~> 1.17",
-      archives: [nerves_bootstrap: "~> 1.13"],
+      archives: [nerves_bootstrap: "~> 1.13.1"],
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       aliases: aliases(),

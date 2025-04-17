@@ -1,5 +1,5 @@
-config BR2_PACKAGE_SPDLOG
-	bool "spdlog"
+config BR2_PACKAGE_SPDLOG_HAILORT
+	bool "spdlog_hailort"
 	depends on BR2_TOOLCHAIN_HAS_THREADS
 	depends on BR2_INSTALL_LIBSTDCPP
 	help
@@ -7,5 +7,5 @@ config BR2_PACKAGE_SPDLOG
 
 	  https://github.com/gabime/spdlog
 
-comment "spdlog needs a toolchain with thread support and C++ support"
+comment "spdlog_hailort needs a toolchain with thread support and C++ support"
 	depends on !BR2_TOOLCHAIN_HAS_THREADS || !BR2_INSTALL_LIBSTDCPP
