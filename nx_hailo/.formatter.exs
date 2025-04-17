@@ -1,8 +1,11 @@
 # Used by "mix format"
 [
+  import_deps: [:phoenix],
+  plugins: [Phoenix.LiveView.HTMLFormatter],
   inputs: [
     "{mix,.formatter}.exs",
-    "{config,lib,test}/**/*.{ex,exs}",
-    "rootfs_overlay/etc/iex.exs"
+    "rootfs_overlay/etc/iex.exs",
+    "*.{heex,ex,exs}",
+    "{config,lib,test}/**/*.{heex,ex,exs}"
   ]
 ]
