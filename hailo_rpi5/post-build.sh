@@ -29,4 +29,4 @@ ln -sf ops.fw $TARGET_DIR/usr/share/fwup/revert.fw
 # Copy the fwup includes to the images dir
 cp -rf $NERVES_DEFCONFIG_DIR/fwup_include $BINARIES_DIR
 mkdir -p $NERVES_DEFCONFIG_DIR/rootfs_overlay/lib/firmware/hailo
-curl -L https://hailo-hailort.s3.eu-west-2.amazonaws.com/Hailo8/4.18.0/FW/hailo8_fw.4.18.0.bin > $NERVES_DEFCONFIG_DIR/rootfs_overlay/lib/firmware/hailo/hailo8_fw.bin
+curl -L https://hailo-hailort.s3.eu-west-2.amazonaws.com/Hailo8/4.20.0/FW/hailo8_fw.4.20.0.bin > $NERVES_DEFCONFIG_DIR/rootfs_overlay/lib/firmware/hailo/hailo8_fw.bin

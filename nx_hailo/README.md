@@ -1,33 +1,38 @@
 # NxHailo
 
-**TODO: Add description**
+## Building via Ubuntu on UTM (macOS)
 
-## Targets
+- Install elixir and erlang
+- Setup github SSH keys
+- Clone this repository
+- Set the environment variables:
 
-Nerves applications produce images for hardware targets based on the
-`MIX_TARGET` environment variable. If `MIX_TARGET` is unset, `mix` builds an
-image that runs on the host (e.g., your laptop). This is useful for executing
-logic tests, running utilities, and debugging. Other targets are represented by
-a short name like `rpi3` that maps to a Nerves system image for that platform.
-All of this logic is in the generated `mix.exs` and may be customized. For more
-information about targets see:
+```shell
+export MIX_TARGET=hailo_rpi5
+export XLA_TARGET_PLATFORM=aarch64-linux-gnu
+export EXLA_FORCE_REBUILD=true
+export EVISION_PREFER_PRECOMPILED=false
+```
 
-https://hexdocs.pm/nerves/supported-targets.html
+- If OpenCV fails, go into the Evision deps folder and edit the download scrips to have the --no-check-certificate option
 
-## Getting Started
+- To ensure hailort is included, run `mix nerves.system.shell`. This will build the firmware and then give you a command to go into the build directory. From there:
+  - `make hailort`
+  - `make defconfig`
+  - `make all`
 
-To start your Nerves app:
-  * `export MIX_TARGET=my_target` or prefix every command with
-    `MIX_TARGET=my_target`. For example, `MIX_TARGET=rpi3`
-  * Install dependencies with `mix deps.get`
-  * Create firmware with `mix firmware`
-  * Burn to an SD card with `mix burn`
+- The SD card must either be:
+  - read via an USB reader and mounted to UTM; OR
+  - mounted via the SD card reader on the Macbook and then the device file pointer must be added to the shared directory for UTM
 
-## Learn more
+- `sudo chown $USER:disk <sd card device>` to remove the need for `sudo`
+- `mix firmware`
+- `mix burn`
 
-  * Official docs: https://hexdocs.pm/nerves/getting-started.html
-  * Official website: https://nerves-project.org/
-  * Forum: https://elixirforum.com/c/nerves-forum
-  * Elixir Slack #nerves channel: https://elixir-slack.community/
-  * Elixir Discord #nerves channel: https://discord.gg/elixir
-  * Source: https://github.com/nerves-project/nerves
+- For `mix upload`, use `mix upload <ip>`, because UTM lives in a different subnet and won't resolve `nerves.local`. Use `ping nerves.local` on the host OS to discover the IP address.
+
+- To access the device from the host machine, copy over the SSH keys to the host and use `ssh -i <non .pub key path> nerves.local`
+
+# Possible issues
+
+- for some reason evision was seeing i686 target toolchain, so I had to manually link gcc/g++ to the proper aarch64 toolchain. This also included creating gcc-gcc and gcc-g++ links besides gcc and g++ inside the /artifacts/hailo_rpi5-portable-0.4.0/host/bin/
