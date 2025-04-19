@@ -50,6 +50,7 @@ defmodule HailoRpi5.MixProject do
       platform_config: [
         defconfig: "nerves_defconfig"
       ],
+      compile: true,
       # The :env key is an optional experimental feature for adding environment
       # variables to the crosscompile environment. These are intended for
       # llvm-based tooling that may need more precise processor information.
