@@ -27,3 +27,4 @@ define HAILORT_DRIVERS_INSTALL_TARGET_CMDS
 endef
 
 $(eval $(kernel-module))
+$(eval $(generic-package))
