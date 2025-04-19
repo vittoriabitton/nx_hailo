@@ -3,7 +3,5 @@
 # If these are non-proprietary, please consider contributing them back to
 # Nerves or Buildroot.
 
-menu "Target packages"
-    source "$NERVES_DEFCONFIG_DIR/packages/hailort/Config.in"
-    source "$NERVES_DEFCONFIG_DIR/packages/hailort-drivers/Config.in"
-endmenu
+source "$NERVES_DEFCONFIG_DIR/packages/hailort/Config.in"
+source "$NERVES_DEFCONFIG_DIR/packages/hailort-drivers/Config.in"
