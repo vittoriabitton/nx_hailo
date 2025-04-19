@@ -3,9 +3,11 @@
 # If these are non-proprietary, please consider contributing them back to
 # Nerves or Buildroot.
 
-menu "Custom Packages"
+menuconfig BR2_PACKAGE_CUSTOM_PACKAGES
+    bool "Custom Packages"
+    default y
 
-source "$NERVES_DEFCONFIG_DIR/packages/hailort/Config.in"
-source "$NERVES_DEFCONFIG_DIR/packages/hailort-drivers/Config.in"
-
-endmenu
+if BR2_PACKAGE_CUSTOM_PACKAGES
+    source "$NERVES_DEFCONFIG_DIR/packages/hailort/Config.in"
+    source "$NERVES_DEFCONFIG_DIR/packages/hailort-drivers/Config.in"
+endif
