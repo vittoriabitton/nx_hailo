@@ -6,5 +6,6 @@
 menu "Custom Packages"
 
 source "$NERVES_DEFCONFIG_DIR/packages/hailort/Config.in"
+source "$NERVES_DEFCONFIG_DIR/packages/hailort-drivers/Config.in"
 
 endmenu
