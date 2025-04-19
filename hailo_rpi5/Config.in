@@ -3,5 +3,15 @@
 # If these are non-proprietary, please consider contributing them back to
 # Nerves or Buildroot.
 
-source "$NERVES_DEFCONFIG_DIR/packages/hailort/Config.in"
-source "$NERVES_DEFCONFIG_DIR/packages/hailort-drivers/Config.in"
+config BR2_PACKAGE_HAS_HAILO_SUPPORT
+	bool
+
+menuconfig BR2_PACKAGE_HAILO_SUPPORT
+	bool "Hailo AI Accelerator Support"
+	help
+	  Enable this option to build support for Hailo AI accelerators
+
+if BR2_PACKAGE_HAILO_SUPPORT
+	source "$NERVES_DEFCONFIG_DIR/packages/hailort/Config.in"
+	source "$NERVES_DEFCONFIG_DIR/packages/hailort-drivers/Config.in"
+endif
