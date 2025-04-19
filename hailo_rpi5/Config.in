@@ -3,14 +3,12 @@
 # If these are non-proprietary, please consider contributing them back to
 # Nerves or Buildroot.
 
-config BR2_PACKAGE_HAS_HAILO_SUPPORT
-	bool
+menu "Hailo AI Accelerator Support"
+    config BR2_PACKAGE_HAS_HAILO_SUPPORT
+        bool
+        default y
 
-config BR2_PACKAGE_HAILO_SUPPORT
-	bool "Hailo AI Accelerator Support"
-	default y
-	help
-	  Enable this option to build support for Hailo AI accelerators
-
-source "$NERVES_DEFCONFIG_DIR/packages/hailort/Config.in"
-source "$NERVES_DEFCONFIG_DIR/packages/hailort-drivers/Config.in"
+    source "$NERVES_DEFCONFIG_DIR/packages/spdlog_hailort/Config.in"
+    source "$NERVES_DEFCONFIG_DIR/packages/hailort/Config.in"
+    source "$NERVES_DEFCONFIG_DIR/packages/hailort-drivers/Config.in"
+endmenu
