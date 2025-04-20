@@ -1,2 +1,5 @@
 # Compressed kernel modules
 CONFIG_FEATURE_SEAMLESS_XZ=y
+
+# System commands
+CONFIG_HOSTNAME=y

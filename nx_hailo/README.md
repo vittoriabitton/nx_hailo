@@ -10,7 +10,7 @@
 ```shell
 export MIX_TARGET=hailo_rpi5
 export XLA_TARGET_PLATFORM=aarch64-linux-gnu
-export EXLA_FORCE_REBUILD=true
+export EXLA_FORCE_REBUILD=false
 export EVISION_PREFER_PRECOMPILED=false
 ```
 
