@@ -11,14 +11,18 @@ NX_HAILO_DIR = c_src
 PRIV_DIR = $(MIX_APP_PATH)/priv
 NX_HAILO_SO = $(PRIV_DIR)/libnx_hailo.so
 
+# HailoRT configuration
+HAILO_INCLUDE_DIR = $(NX_HAILO_DIR)/include/hailo
+HAILO_LIB_DIR ?= /usr/lib
+
 # Build flags
-CFLAGS += -I$(FINE_INCLUDE_DIR) -fPIC -fvisibility=hidden -I$(ERTS_INCLUDE_DIR) -Wall -std=c++17 -O3
+CFLAGS += -I$(FINE_INCLUDE_DIR) -I$(HAILO_INCLUDE_DIR) -fPIC -fvisibility=hidden -I$(ERTS_INCLUDE_DIR) -Wall -std=c++17 -O3
 
 # Link flags
 ifeq ($(shell uname -s), Darwin)
-	LDFLAGS = -undefined dynamic_lookup -flat_namespace
+	LDFLAGS = -undefined dynamic_lookup -flat_namespace -L$(HAILO_LIB_DIR) -lhailort
 else
-	LDFLAGS = -shared -Wl,-rpath,'$$ORIGIN'
+	LDFLAGS = -shared -Wl,-rpath,'$$ORIGIN' -L$(HAILO_LIB_DIR) -lhailort
 endif
 
 SOURCES = $(NX_HAILO_DIR)/nx_hailo.cpp

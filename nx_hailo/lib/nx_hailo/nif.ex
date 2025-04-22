@@ -11,24 +11,22 @@ defmodule NxHailo.NIF.Macro do
 end
 
 defmodule NxHailo.NIF do
-  @moduledoc """
-  Native Implemented Functions (NIFs) for NxHailo.
-  This module contains the low-level NIF bindings.
-  """
+  @moduledoc false
 
   @on_load :load_nif
 
   import NxHailo.NIF.Macro
 
   def load_nif do
-    nif_file = ~c"#{:code.priv_dir(:nx_hailo)}/libnx_hailo"
-
-    case :erlang.load_nif(nif_file, 0) do
-      :ok -> :ok
-      {:error, {:load_failed, error}} -> IO.puts("Failed to load NIF: #{error}")
-      {:error, error} -> IO.puts("Failed to load NIF: #{error}")
-    end
+    path = :filename.join(:code.priv_dir(:nx_hailo), 'nx_hailo')
+    :erlang.load_nif(path, 0)
   end
 
   defnif identity(_term)
+
+  # NIF functions
+  def load_network_group(_hef_path), do: :erlang.nif_error(:nif_not_loaded)
+  def create_pipeline(_network_group), do: :erlang.nif_error(:nif_not_loaded)
+  def get_output_vstream_info(_pipeline), do: :erlang.nif_error(:nif_not_loaded)
+  def infer(_pipeline, _input_data), do: :erlang.nif_error(:nif_not_loaded)
 end
