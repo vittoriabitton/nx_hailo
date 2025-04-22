@@ -1,8 +1,7 @@
 defmodule NxHailo do
   @moduledoc """
-  Documentation for `NxHailo`.
+  NxHailo provides Nx integration with Hailo hardware accelerators.
   """
-
   alias Evision, as: CV
 
   ip = "192.168.68.105"
