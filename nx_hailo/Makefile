@@ -12,7 +12,7 @@ PRIV_DIR = $(MIX_APP_PATH)/priv
 NX_HAILO_SO = $(PRIV_DIR)/libnx_hailo.so
 
 # HailoRT configuration
-HAILO_INCLUDE_DIR = $(NX_HAILO_DIR)/include/hailo
+HAILO_INCLUDE_DIR = $(NX_HAILO_DIR)/include
 HAILO_LIB_DIR ?= /usr/lib
 
 # Build flags
