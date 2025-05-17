@@ -18,7 +18,7 @@ export EVISION_PREFER_PRECOMPILED=false
 
 - To ensure hailort is included, run `mix nerves.system.shell`. This will build the firmware and then give you a command to go into the build directory. From there:
   - `make hailort`
-  - `make defconfig`
+  - `make hailort-drivers`
   - `make all`
 
 - The SD card must either be:

@@ -49,70 +49,81 @@ void infer_pipeline_resource_dtor(ErlNifEnv *env, void *obj) {
 }
 
 // Define resource types using FINE macros
-FINE_RESOURCE(vdevice_resource, vdevice_resource_dtor);
-FINE_RESOURCE(network_group_resource, network_group_resource_dtor);
-FINE_RESOURCE(infer_pipeline_resource, infer_pipeline_resource_dtor);
+FINE_RESOURCE(VDeviceResource);
+FINE_RESOURCE(NetworkGroupResource);
+FINE_RESOURCE(InferPipelineResource);
+
+fine::Term fine_error_string(ErlNifEnv *env, const std::string &message) {
+  auto term = fine::encode(env, message);
+  return fine::encode(env, fine::Error(term));
+}
 
 // NIF function to load a network group from a HEF file
 fine::Term load_network_group(ErlNifEnv *env, fine::Term hef_path_term) {
   // Get HEF file path from the input term
   std::string hef_path;
-  if (!fine::get(env, hef_path_term, &hef_path)) {
-    return fine::error(env, "Invalid HEF file path");
+  try {
+    hef_path = fine::decode<std::string>(env, hef_path_term);
+  } catch (const std::exception &e) {
+    return fine_error_string(env, "Invalid HEF file path");
   }
 
   // Create a virtual device
   auto vdevice_expected = hailort::VDevice::create();
   if (!vdevice_expected) {
-    return fine::error(env, "Failed to create virtual device: " +
-                                std::to_string(vdevice_expected.status()));
+    return fine_error_string(env,
+                             "Failed to create virtual device: " +
+                                 std::to_string(vdevice_expected.status()));
   }
   auto vdevice = std::move(vdevice_expected.value());
 
   // Load the HEF file
   auto hef = hailort::Hef::create(hef_path);
   if (!hef) {
-    return fine::error(env, "Failed to load HEF file: " +
-                                std::to_string(hef.status()));
+    return fine_error_string(env, "Failed to load HEF file: " +
+                                      std::to_string(hef.status()));
   }
 
   // Create configure params
   auto configure_params = vdevice->create_configure_params(hef.value());
   if (!configure_params) {
-    return fine::error(env, "Failed to create configure params: " +
-                                std::to_string(configure_params.status()));
+    return fine_error_string(env,
+                             "Failed to create configure params: " +
+                                 std::to_string(configure_params.status()));
   }
 
   // Configure the network groups
   auto network_groups =
       vdevice->configure(hef.value(), configure_params.value());
   if (!network_groups) {
-    return fine::error(env, "Failed to configure network groups: " +
-                                std::to_string(network_groups.status()));
+    return fine_error_string(env, "Failed to configure network groups: " +
+                                      std::to_string(network_groups.status()));
   }
 
   // Check that we have exactly one network group
   if (network_groups->size() != 1) {
-    return fine::error(env, "Invalid number of network groups: " +
-                                std::to_string(network_groups->size()));
+    return fine_error_string(env, "Invalid number of network groups: " +
+                                      std::to_string(network_groups->size()));
   }
 
   // Create a new resource for the NetworkGroup
-  auto *res = new NetworkGroupResource;
-  res->network_group = std::move(network_groups->at(0));
-  res->vdevice = vdevice;
+  auto resource = fine::make_resource<NetworkGroupResource>();
+  resource->network_group = std::move(network_groups->at(0));
+  resource->vdevice = std::move(vdevice);
 
   // Return the resource term
-  return fine::make_resource(env, network_group_resource, res);
+  return fine::encode(env, resource);
 }
 
 // NIF function to create an inference pipeline from a network group
 fine::Term create_pipeline(ErlNifEnv *env, fine::Term network_group_term) {
   // Get the network group resource from the input term
-  NetworkGroupResource *ng_res;
-  if (!fine::get_resource(env, network_group_term, network_group_resource,
-                          &ng_res)) {
-    return fine::error(env, "Invalid network group resource");
+  fine::ResourcePtr<NetworkGroupResource> ng_res;
+  try {
+    ng_res = fine::decode<fine::ResourcePtr<NetworkGroupResource>>(
+        env, network_group_term);
+  } catch (const std::exception &e) {
+    return fine_error_string(env, "Invalid network group resource");
   }
 
   // Create input and output vstream params with default settings
@@ -120,81 +131,94 @@ fine::Term create_pipeline(ErlNifEnv *env, fine::Term network_group_term) {
       {}, HAILO_FORMAT_TYPE_AUTO, HAILO_DEFAULT_VSTREAM_TIMEOUT_MS,
       HAILO_DEFAULT_VSTREAM_QUEUE_SIZE);
   if (!input_params) {
-    return fine::error(env, "Failed to create input vstream params: " +
-                                std::to_string(input_params.status()));
+    return fine_error_string(env, "Failed to create input vstream params: " +
+                                      std::to_string(input_params.status()));
   }
 
   auto output_params = ng_res->network_group->make_output_vstream_params(
       {}, HAILO_FORMAT_TYPE_AUTO, HAILO_DEFAULT_VSTREAM_TIMEOUT_MS,
       HAILO_DEFAULT_VSTREAM_QUEUE_SIZE);
   if (!output_params) {
-    return fine::error(env, "Failed to create output vstream params: " +
-                                std::to_string(output_params.status()));
+    return fine_error_string(env, "Failed to create output vstream params: " +
+                                      std::to_string(output_params.status()));
   }
 
   // Create the inference pipeline
   auto pipeline = hailort::InferVStreams::create(
       *ng_res->network_group, input_params.value(), output_params.value());
   if (!pipeline) {
-    return fine::error(env, "Failed to create inference pipeline: " +
-                                std::to_string(pipeline.status()));
+    return fine_error_string(env, "Failed to create inference pipeline: " +
+                                      std::to_string(pipeline.status()));
   }
 
   // Create a new resource for the InferPipeline
-  auto *res = new InferPipelineResource;
-  res->pipeline = std::move(pipeline.value());
-  res->network_group = ng_res->network_group;
+  auto resource = fine::make_resource<InferPipelineResource>();
+  resource->pipeline =
+      std::make_shared<hailort::InferVStreams>(std::move(pipeline.value()));
+  resource->network_group = ng_res->network_group;
 
   // Return the resource term
-  return fine::make_resource(env, infer_pipeline_resource, res);
+  return fine::encode(env, resource);
 }
 
 // Helper function to get vstream info as a map
 fine::Term get_vstream_info(ErlNifEnv *env,
                             const hailort::OutputVStream &vstream) {
-  fine::Term map = fine::make_map(env);
-  map = fine::put(env, map, fine::make_atom(env, "name"),
-                  fine::make_binary(env, vstream.name()));
-  map = fine::put(env, map, fine::make_atom(env, "frame_size"),
-                  fine::make_uint(env, vstream.get_frame_size()));
-  return map;
+  // std::map<std::string, uint64_t> map;
+  // map["name"] = 0; // Will be replaced below
+  // map["frame_size"] = vstream.get_frame_size();
+  // // For name, we need to encode as binary, so we will build the map manually
+  // ERL_NIF_TERM result_map;
+  // enif_make_new_map(env, &result_map);
+  // ERL_NIF_TERM name_key = fine::encode(env, std::string("name"));
+  // ERL_NIF_TERM name_val = fine::encode(env, vstream.name());
+  // enif_make_map_put(env, result_map, name_key, name_val, &result_map);
+  // ERL_NIF_TERM frame_size_key = fine::encode(env, std::string("frame_size"));
+  // ERL_NIF_TERM frame_size_val =
+  //     fine::encode(env, static_cast<uint64_t>(vstream.get_frame_size()));
+  // enif_make_map_put(env, result_map, frame_size_key, frame_size_val,
+  //                   &result_map);
+  return fine::encode(env, fine::Ok());
 }
 
 // NIF function to get information about output vstreams
 fine::Term get_output_vstream_info(ErlNifEnv *env, fine::Term pipeline_term) {
   // Get the pipeline resource from the input term
-  InferPipelineResource *pipeline_res;
-  if (!fine::get_resource(env, pipeline_term, infer_pipeline_resource,
-                          &pipeline_res)) {
-    return fine::error(env, "Invalid pipeline resource");
+  fine::ResourcePtr<InferPipelineResource> pipeline_res;
+  try {
+    pipeline_res = fine::decode<fine::ResourcePtr<InferPipelineResource>>(
+        env, pipeline_term);
+  } catch (const std::exception &e) {
+    return fine_error_string(env, "Invalid pipeline resource");
   }
 
   auto output_vstreams = pipeline_res->pipeline->get_output_vstreams();
-  fine::Term result = fine::make_list(env, 0);
-
-  for (auto it = output_vstreams.rbegin(); it != output_vstreams.rend(); ++it) {
-    const auto &vstream = *it;
-    fine::Term vstream_info = get_vstream_info(env, vstream);
-    result = fine::cons(env, vstream_info, result);
+  std::vector<ERL_NIF_TERM> result;
+  for (const auto &vstream : output_vstreams) {
+    result.push_back(get_vstream_info(env, vstream));
   }
-
-  return result;
+  return fine::encode(env, result);
 }
 
 // NIF function to run inference using a pipeline
 fine::Term infer(ErlNifEnv *env, fine::Term pipeline_term,
                  fine::Term input_data_term) {
   // Get the pipeline resource from the input term
-  InferPipelineResource *pipeline_res;
-  if (!fine::get_resource(env, pipeline_term, infer_pipeline_resource,
-                          &pipeline_res)) {
-    return fine::error(env, "Invalid pipeline resource");
+  fine::ResourcePtr<InferPipelineResource> pipeline_res;
+  try {
+    pipeline_res = fine::decode<fine::ResourcePtr<InferPipelineResource>>(
+        env, pipeline_term);
+  } catch (const std::exception &e) {
+    return fine_error_string(env, "Invalid pipeline resource");
   }
 
   // Get the input data map from the input term
-  std::map<std::string, fine::Term> input_map;
-  if (!fine::get(env, input_data_term, &input_map)) {
-    return fine::error(env, "Input data must be a map");
+  std::map<std::string, ERL_NIF_TERM> input_map;
+  try {
+    input_map =
+        fine::decode<std::map<std::string, ERL_NIF_TERM>>(env, input_data_term);
+  } catch (const std::exception &e) {
+    return fine_error_string(env, "Input data must be a map");
   }
 
   // Get the input and output vstreams
@@ -202,38 +226,28 @@ fine::Term infer(ErlNifEnv *env, fine::Term pipeline_term,
   auto output_vstreams = pipeline_res->pipeline->get_output_vstreams();
 
   // Set up input data map and memory views
-  std::map<std::string, std::vector<uint8_t>> input_data;
   std::map<std::string, hailort::MemoryView> input_data_mem_views;
-
   const size_t frames_count = 1; // Process one frame at a time
 
   // Prepare input data for each input vstream
   for (const auto &input_vstream : input_vstreams) {
     std::string name = input_vstream.get().name();
-
-    // Check if the input data contains this vstream name
     auto it = input_map.find(name);
     if (it == input_map.end()) {
-      return fine::error(env, "Missing input data for vstream: " + name);
+      return fine_error_string(env, "Missing input data for vstream: " + name);
     }
-
-    // Get binary data from Elixir term
     ErlNifBinary binary;
-    if (!fine::get_binary(env, it->second, &binary)) {
-      return fine::error(env, "Input data for vstream " + name +
-                                  " must be a binary");
+    if (!enif_inspect_binary(env, it->second, &binary)) {
+      return fine_error_string(env, "Input data for vstream " + name +
+                                        " must be a binary");
     }
-
-    // Calculate expected size
     size_t expected_size = input_vstream.get().get_frame_size() * frames_count;
     if (binary.size != expected_size) {
-      return fine::error(env,
-                         "Invalid input data size for vstream " + name +
-                             ". Expected: " + std::to_string(expected_size) +
-                             ", Got: " + std::to_string(binary.size));
+      return fine_error_string(
+          env, "Invalid input data size for vstream " + name +
+                   ". Expected: " + std::to_string(expected_size) +
+                   ", Got: " + std::to_string(binary.size));
     }
-
-    // Create memory view directly from binary data
     input_data_mem_views.emplace(name,
                                  hailort::MemoryView(binary.data, binary.size));
   }
@@ -241,16 +255,10 @@ fine::Term infer(ErlNifEnv *env, fine::Term pipeline_term,
   // Prepare output data map and memory views
   std::map<std::string, std::vector<uint8_t>> output_data;
   std::map<std::string, hailort::MemoryView> output_data_mem_views;
-
-  // Allocate memory for each output vstream
   for (const auto &output_vstream : output_vstreams) {
     std::string name = output_vstream.get().name();
     size_t frame_size = output_vstream.get().get_frame_size();
-
-    // Allocate buffer
     output_data.emplace(name, std::vector<uint8_t>(frame_size * frames_count));
-
-    // Create memory view
     auto &output_buffer = output_data[name];
     output_data_mem_views.emplace(
         name, hailort::MemoryView(output_buffer.data(), output_buffer.size()));
@@ -259,29 +267,23 @@ fine::Term infer(ErlNifEnv *env, fine::Term pipeline_term,
   // Run inference
   hailo_status status = pipeline_res->pipeline->infer(
       input_data_mem_views, output_data_mem_views, frames_count);
-
   if (status != HAILO_SUCCESS) {
-    return fine::error(env, "Inference failed with status: " +
-                                std::to_string(status));
+    return fine_error_string(env, "Inference failed with status: " +
+                                      std::to_string(status));
   }
 
   // Prepare output data map to return to Elixir
-  fine::Term output_map = fine::make_map(env);
-
+  std::map<std::string, ERL_NIF_TERM> output_map;
   for (const auto &output_vstream : output_vstreams) {
     std::string name = output_vstream.get().name();
     const auto &output_buffer = output_data[name];
-
-    // Create binary term from output buffer
-    fine::Term binary_term =
-        fine::make_binary(env, output_buffer.data(), output_buffer.size());
-
-    // Add to output map
-    output_map =
-        fine::put(env, output_map, fine::make_binary(env, name), binary_term);
+    ERL_NIF_TERM binary_term;
+    unsigned char *bin = (unsigned char *)enif_make_new_binary(
+        env, output_buffer.size(), &binary_term);
+    memcpy(bin, output_buffer.data(), output_buffer.size());
+    output_map[name] = binary_term;
   }
-
-  return output_map;
+  return fine::encode(env, output_map);
 }
 
 // Register NIF functions

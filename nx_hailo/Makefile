@@ -18,12 +18,7 @@ HAILO_LIB_DIR ?= /usr/lib
 # Build flags
 CFLAGS += -I$(FINE_INCLUDE_DIR) -I$(HAILO_INCLUDE_DIR) -fPIC -fvisibility=hidden -I$(ERTS_INCLUDE_DIR) -Wall -std=c++17 -O3
 
-# Link flags
-ifeq ($(shell uname -s), Darwin)
-	LDFLAGS = -undefined dynamic_lookup -flat_namespace -L$(HAILO_LIB_DIR) -lhailort
-else
-	LDFLAGS = -shared -Wl,-rpath,'$$ORIGIN' -L$(HAILO_LIB_DIR) -lhailort
-endif
+LDFLAGS = -shared -Wl,-rpath,'$$ORIGIN' -L$(HAILO_LIB_DIR) -lhailort
 
 SOURCES = $(NX_HAILO_DIR)/nx_hailo.cpp
 OBJECTS = $(patsubst $(NX_HAILO_DIR)/%.cpp,$(NX_HAILO_CACHE_OBJ_DIR)/%.o,$(SOURCES))
