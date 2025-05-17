@@ -54,7 +54,12 @@ FINE_RESOURCE(NetworkGroupResource);
 FINE_RESOURCE(InferPipelineResource);
 
 fine::Term fine_error_string(ErlNifEnv *env, const std::string &message) {
-  std::tuple<fine::Atom, std::string> tagged_result(fine::Atom("error"), message);
+  std::tuple<fine::Atom, std::string>(fine::Atom("error"), message);
+  return fine::encode(env, tagged_result);
+}
+
+template <typename T> fine::Term fine_ok(ErlNifEnv *env, T value) {
+  std::tuple<fine::Atom, T>(fine::Atom("ok"), value);
   return fine::encode(env, tagged_result);
 }
 
@@ -112,7 +117,7 @@ fine::Term load_network_group(ErlNifEnv *env, fine::Term hef_path_term) {
   resource->vdevice = std::move(vdevice);
 
   // Return the resource term
-  return fine::Ok(fine::encode(env, resource));
+  return fine_ok(env, resource);
 }
 
 // NIF function to create an inference pipeline from a network group
