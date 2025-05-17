@@ -23,8 +23,8 @@ defmodule NxHailo.NIF do
   end
 
   # NIF functions
-  def load_network_group(_hef_path), do: :erlang.nif_error(:nif_not_loaded)
-  def create_pipeline(_network_group), do: :erlang.nif_error(:nif_not_loaded)
-  def get_output_vstream_info(_pipeline), do: :erlang.nif_error(:nif_not_loaded)
-  def infer(_pipeline, _input_data), do: :erlang.nif_error(:nif_not_loaded)
+  defnif load_network_group(_hef_path)
+  defnif create_pipeline(_network_group)
+  defnif get_output_vstream_info(_pipeline)
+  defnif infer(_pipeline, _input_data)
 end

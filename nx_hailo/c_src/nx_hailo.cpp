@@ -54,8 +54,8 @@ FINE_RESOURCE(NetworkGroupResource);
 FINE_RESOURCE(InferPipelineResource);
 
 fine::Term fine_error_string(ErlNifEnv *env, const std::string &message) {
-  auto term = fine::encode(env, message);
-  return fine::encode(env, fine::Error(term));
+  std::tuple<fine::Atom, std::string> tagged_result(fine::Atom("error"), message);
+  return fine::encode(env, tagged_result);
 }
 
 // NIF function to load a network group from a HEF file
@@ -112,7 +112,7 @@ fine::Term load_network_group(ErlNifEnv *env, fine::Term hef_path_term) {
   resource->vdevice = std::move(vdevice);
 
   // Return the resource term
-  return fine::encode(env, resource);
+  return fine::Ok(fine::encode(env, resource));
 }
 
 // NIF function to create an inference pipeline from a network group
