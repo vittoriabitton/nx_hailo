@@ -292,8 +292,4 @@ FINE_NIF(create_pipeline, 1);
 FINE_NIF(get_output_vstream_info, 1);
 FINE_NIF(infer, 2);
 
-// Old code - keeping for reference
-// fine::Term identity(ErlNifEnv *env, fine::Term term) { return term; }
-// FINE_NIF(identity, 1);
-
 FINE_INIT("Elixir.NxHailo.NIF");

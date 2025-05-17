@@ -18,7 +18,10 @@ HAILO_LIB_DIR ?= /usr/lib
 # Build flags
 CFLAGS += -I$(FINE_INCLUDE_DIR) -I$(HAILO_INCLUDE_DIR) -fPIC -fvisibility=hidden -I$(ERTS_INCLUDE_DIR) -Wall -std=c++17 -O3
 
-LDFLAGS = -shared -Wl,-rpath,'$$ORIGIN' -L$(HAILO_LIB_DIR) -lhailort
+# LDFLAGS must include the sysroot's lib directory for cross-compilation
+# HAILORT_LIB_DIR defaulting to the setup in UTM
+HAILORT_LIB_DIR ?= ../hailo_rpi5/.nerves/artifacts/hailo_rpi5-portable-0.4.0/target/usr/lib
+LDFLAGS = -shared -L$(HAILORT_LIB_DIR) -lhailort
 
 SOURCES = $(NX_HAILO_DIR)/nx_hailo.cpp
 OBJECTS = $(patsubst $(NX_HAILO_DIR)/%.cpp,$(NX_HAILO_CACHE_OBJ_DIR)/%.o,$(SOURCES))

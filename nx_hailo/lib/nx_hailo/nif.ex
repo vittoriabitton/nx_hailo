@@ -18,11 +18,9 @@ defmodule NxHailo.NIF do
   import NxHailo.NIF.Macro
 
   def load_nif do
-    path = :filename.join(:code.priv_dir(:nx_hailo), 'nx_hailo')
+    path = :filename.join(:code.priv_dir(:nx_hailo), ~c"libnx_hailo")
     :erlang.load_nif(path, 0)
   end
-
-  defnif identity(_term)
 
   # NIF functions
   def load_network_group(_hef_path), do: :erlang.nif_error(:nif_not_loaded)
