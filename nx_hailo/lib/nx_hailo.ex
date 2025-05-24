@@ -1,48 +1,64 @@
 defmodule NxHailo do
   @moduledoc """
-  Documentation for `NxHailo`.
+  Top-level API for Hailo integration with Nx.
+  Provides simple functions to load models and run inference.
   """
 
-  alias Evision, as: CV
+  alias NxHailo.API
 
-  ip = "192.168.68.105"
-  port = "554"
-  user = "admin"
-  pass = "adminadmin5"
-  @url "rtsp://#{user}:#{pass}@#{ip}:#{port}/mode=real&idc=1&ids=1"
-
-  # Evision.imwrite("/tmp/frame.png", mat)
-  # no host
-  # scp nerves.local:/tmp/frame.png /tmp/frame.png
-
-  # open /tmp/frame.png
-
-  def get_video_capture(url \\ @url) do
-    cap = CV.VideoCapture.videoCapture(url)
-    # Force the buffer size to 1 so that we can easily get
-    # the frame that the camera currently is seeing.
-    CV.VideoCapture.set(cap, CV.Constant.cv_CAP_PROP_BUFFERSIZE(), 1)
-
-    cap
+  defmodule Model do
+    @moduledoc """
+    Represents a loaded Hailo model, ready for inference.
+    This struct encapsulates the inference pipeline and associated metadata.
+    """
+    defstruct pipeline: nil, # Holds an %NxHailo.API.InferPipeline{}
+              name: nil     # e.g., HEF filename or a custom model name
   end
 
-  @spec get_realtime_frame(CV.VideoCapture.t()) :: CV.Mat.t()
-  def get_realtime_frame(capture) do
-    # This assumes that the buffer size is 1
-    # so we grab the frame in the queue, which is outdated,
-    # and then read the new frame, which is "around now".
+  @doc """
+  Loads a Hailo model from a HEF file and prepares it for inference.
 
-    # grab/1 will consume the frame without all of the decoding overhead.
-    # retrieve/1 could decode said frame, but seeing that we want to
-    # just drop this one, we can then read the next one (which is
-    # effectively the same as grab+retrieve).
-    true = CV.VideoCapture.grab(capture)
+  This function handles VDevice creation, network configuration, and pipeline setup.
 
-    %CV.Mat{} = mat = CV.VideoCapture.read(capture)
+  Parameters:
+    - `hef_path`: The path to the .hef model file.
+    - `model_name` (optional): A name to associate with the loaded model.
 
-    # TO DO: We might want to convert this to a tensor directly,
-    # but given that we don't have any actual operation using this function,
-    # returning the mat is more flexible.
-    mat
+  Returns `{:ok, %NxHailo.Model{}}` or `{:error, reason}`.
+  """
+  def load(hef_path \\ "/var/models/yolov5s.hef", model_name \\ nil) when is_binary(hef_path) do
+    with {:ok, vdevice} <- API.create_vdevice(),
+         {:ok, ng} <- API.configure_network_group(vdevice, hef_path),
+         {:ok, pipeline_struct} <- API.create_pipeline(ng) do
+      model = %Model{
+        pipeline: pipeline_struct,
+        name: model_name || Path.basename(hef_path)
+      }
+      {:ok, model}
+    else
+      # Consolidate error handling if needed, or pass through NIF/API errors
+      {:error, reason} -> {:error, reason}
+      error_tuple -> error_tuple # For other unexpected error formats
+    end
+  end
+
+  @doc """
+  Runs inference on a previously loaded Hailo model.
+
+  Parameters:
+    - `model`: The `%NxHailo.Model{}` struct obtained from `load/1`.
+    - `inputs`: A map where keys are input vstream names (strings or atoms)
+      and values are binaries containing the input data.
+      Example: `%{ "input_layer_name" => <<...>> }` or `%{ input_layer_name: <<...>> }`
+
+  Returns `{:ok, output_data_map}` or `{:error, reason}`.
+  The `output_data_map` will have string keys for output vstream names.
+  """
+  def infer(%Model{pipeline: pipeline_struct} = _model, inputs) when is_map(inputs) do
+    # The API.infer function expects string keys for input map.
+    # We can be flexible and convert atom keys here if necessary,
+    # or enforce string keys in the doc/spec for this top-level infer.
+    # For now, assume API.infer's validation handles it or user provides string keys.
+    API.infer(pipeline_struct, inputs)
   end
 end

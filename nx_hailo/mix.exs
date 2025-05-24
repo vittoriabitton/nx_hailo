@@ -18,7 +18,14 @@ defmodule NxHailo.MixProject do
       deps: deps(),
       aliases: aliases(),
       releases: [{@app, release()}],
-      preferred_cli_target: [run: :host, test: :host]
+      preferred_cli_target: [run: :host, test: :host],
+      compilers: [:elixir_make] ++ Mix.compilers(),
+      make_env: fn ->
+        %{
+          "MIX_BUILD_EMBEDDED" => "#{Mix.Project.config()[:build_embedded]}",
+          "FINE_INCLUDE_DIR" => Fine.include_dir()
+        }
+      end
     ]
   end
 
@@ -75,7 +82,10 @@ defmodule NxHailo.MixProject do
       {:telemetry_poller, "~> 1.0"},
       {:jason, "~> 1.2"},
       {:dns_cluster, "~> 0.1.1"},
-      {:bandit, "~> 1.5"}
+      {:bandit, "~> 1.5"},
+      {:nx, "~> 0.6"},
+      {:elixir_make, "~> 0.6", runtime: false},
+      {:fine, "~> 0.1.0", runtime: false}
     ]
   end
 
