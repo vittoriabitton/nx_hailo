@@ -19,11 +19,13 @@ defmodule NxHailo.MixProject do
       aliases: aliases(),
       releases: [{@app, release()}],
       preferred_cli_target: [run: :host, test: :host],
-      compilers: [:download_yolov8_model, :elixir_make] ++ Mix.compilers(),
+      compilers: [:elixir_make] ++ Mix.compilers(),
       make_env: fn ->
         %{
           "MIX_BUILD_EMBEDDED" => "#{Mix.Project.config()[:build_embedded]}",
-          "FINE_INCLUDE_DIR" => Fine.include_dir()
+          "FINE_INCLUDE_DIR" => Fine.include_dir(),
+          "HAILO_INCLUDE_DIR" =>
+            Path.join([__DIR__, "deps/hailort_include/hailort/libhailort/include"]) |> dbg()
         }
       end
     ]
@@ -86,6 +88,15 @@ defmodule NxHailo.MixProject do
       {:nx, "~> 0.6"},
       {:elixir_make, "~> 0.6", runtime: false},
       {:fine, "~> 0.1.0", runtime: false},
+      {
+        :hailort_include,
+        ">= 0.0.0",
+        github: "cocoa-xu/hailort",
+        ref: "v4.20.0-build-nerves",
+        app: false,
+        compile: false,
+        sparse: "hailort/libhailort/include"
+      },
       {:req, "~> 0.4.0"},
       {:yaml_elixir, "~> 2.10"}
     ]
