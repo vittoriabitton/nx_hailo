@@ -4,6 +4,7 @@ defmodule NxHailo.API do
   """
 
   alias NxHailo.NIF
+  alias NxHailo.VStreamInfo
 
   defmodule VDevice do
     @moduledoc """
@@ -39,9 +40,16 @@ defmodule NxHailo.API do
   Returns `{:ok, %VDevice{}}` or `{:error, reason}`.
   """
   def create_vdevice() do
-    case NIF.create_vdevice() do
-      {:ok, ref} -> {:ok, %VDevice{ref: ref}}
-      error -> error
+    if dev = :persistent_term.get({__MODULE__, :vdevice}, nil) do
+      {:ok, dev}
+    else
+      case NIF.create_vdevice() do
+        {:ok, ref} ->
+          dev = %VDevice{ref: ref}
+          :persistent_term.put({__MODULE__, :vdevice}, dev)
+          {:ok, dev}
+        error -> error
+      end
     end
   end
 
@@ -57,14 +65,18 @@ defmodule NxHailo.API do
   def configure_network_group(%VDevice{ref: vdevice_ref} = _vdevice, hef_path)
       when is_binary(hef_path) do
     with {:ok, ng_ref} <- NIF.configure_network_group(vdevice_ref, hef_path),
-         {:ok, input_infos} <- NIF.get_input_vstream_infos_from_ng(ng_ref),
-         {:ok, output_infos} <- NIF.get_output_vstream_infos_from_ng(ng_ref) do
+         {:ok, raw_input_infos} <- NIF.get_input_vstream_infos_from_ng(ng_ref),
+         {:ok, raw_output_infos} <- NIF.get_output_vstream_infos_from_ng(ng_ref) do
+
+      input_infos = Enum.map(raw_input_infos, &VStreamInfo.from_map/1)
+      output_infos = Enum.map(raw_output_infos, &VStreamInfo.from_map/1)
+
       {:ok,
        %ConfiguredNetworkGroup{
          ref: ng_ref,
          vdevice_ref: vdevice_ref,
-         input_vstream_infos: transform_vstream_infos(input_infos),
-         output_vstream_infos: transform_vstream_infos(output_infos)
+         input_vstream_infos: input_infos,
+         output_vstream_infos: output_infos
        }}
     else
       error -> error
@@ -81,14 +93,18 @@ defmodule NxHailo.API do
   """
   def create_pipeline(%ConfiguredNetworkGroup{ref: ng_ref} = _network_group) do
     with {:ok, pipeline_ref} <- NIF.create_pipeline(ng_ref),
-         {:ok, input_infos} <- NIF.get_input_vstream_infos_from_pipeline(pipeline_ref),
-        {:ok, output_infos} <- NIF.get_output_vstream_infos_from_pipeline(pipeline_ref) do
+         {:ok, raw_input_infos} <- NIF.get_input_vstream_infos_from_pipeline(pipeline_ref),
+         {:ok, raw_output_infos} <- NIF.get_output_vstream_infos_from_pipeline(pipeline_ref) do
+
+      input_infos = Enum.map(raw_input_infos, &VStreamInfo.from_map/1)
+      output_infos = Enum.map(raw_output_infos, &VStreamInfo.from_map/1)
+
       {:ok,
         %InferPipeline{
           ref: pipeline_ref,
           network_group_ref: ng_ref,
-          input_vstream_infos: transform_vstream_infos(input_infos),
-          output_vstream_infos: transform_vstream_infos(output_infos)
+          input_vstream_infos: input_infos,
+          output_vstream_infos: output_infos
         }}
     end
   end
@@ -121,13 +137,13 @@ defmodule NxHailo.API do
   """
   def get_input_vstream_infos(%ConfiguredNetworkGroup{ref: ng_ref}) do
     case NIF.get_input_vstream_infos_from_ng(ng_ref) do
-      {:ok, infos} -> {:ok, transform_vstream_infos(infos)}
+      {:ok, raw_infos} -> {:ok, Enum.map(raw_infos, &VStreamInfo.from_map/1)}
       error -> error
     end
   end
   def get_input_vstream_infos(%InferPipeline{ref: pipeline_ref}) do
     case NIF.get_input_vstream_infos_from_pipeline(pipeline_ref) do
-      {:ok, infos} -> {:ok, transform_vstream_infos(infos)}
+      {:ok, raw_infos} -> {:ok, Enum.map(raw_infos, &VStreamInfo.from_map/1)}
       error -> error
     end
   end
@@ -138,29 +154,16 @@ defmodule NxHailo.API do
   """
   def get_output_vstream_infos(%ConfiguredNetworkGroup{ref: ng_ref}) do
     case NIF.get_output_vstream_infos_from_ng(ng_ref) do
-      {:ok, infos} -> {:ok, transform_vstream_infos(infos)}
+      {:ok, raw_infos} -> {:ok, Enum.map(raw_infos, &VStreamInfo.from_map/1)}
       error -> error
     end
   end
   def get_output_vstream_infos(%InferPipeline{ref: pipeline_ref}) do
     case NIF.get_output_vstream_infos_from_pipeline(pipeline_ref) do
-      {:ok, infos} -> {:ok, transform_vstream_infos(infos)}
+      {:ok, raw_infos} -> {:ok, Enum.map(raw_infos, &VStreamInfo.from_map/1)}
       error -> error
     end
   end
-
-  # Helper to transform NIF vstream info (list of maps with string keys)
-  # to a list of maps with atom keys for Elixir convenience.
-  defp transform_vstream_infos(infos_list) when is_list(infos_list) do
-    Enum.map(infos_list, fn info_map ->
-      if is_map(info_map) do
-        Enum.into(info_map, %{}, fn {key, val} -> {String.to_atom(key), val} end)
-      else
-        info_map
-      end
-    end)
-  end
-  defp transform_vstream_infos(other), do: other
 
   defp validate_input_data(expected_infos, input_data) do
     expected_names = Enum.map(expected_infos, &(&1.name))

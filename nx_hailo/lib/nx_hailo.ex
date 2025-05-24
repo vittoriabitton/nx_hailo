@@ -12,9 +12,7 @@ defmodule NxHailo do
     This struct encapsulates the inference pipeline and associated metadata.
     """
     defstruct pipeline: nil, # Holds an %NxHailo.API.InferPipeline{}
-              name: nil,     # e.g., HEF filename or a custom model name
-              input_infos: [], # List of input vstream info maps (name, frame_size, etc.)
-              output_infos: [] # List of output vstream info maps
+              name: nil     # e.g., HEF filename or a custom model name
   end
 
   @doc """
@@ -28,15 +26,13 @@ defmodule NxHailo do
 
   Returns `{:ok, %NxHailo.Model{}}` or `{:error, reason}`.
   """
-  def load(hef_path, model_name \\ nil) when is_binary(hef_path) do
+  def load(hef_path \\ "/var/models/yolov5s.hef", model_name \\ nil) when is_binary(hef_path) do
     with {:ok, vdevice} <- API.create_vdevice(),
          {:ok, ng} <- API.configure_network_group(vdevice, hef_path),
          {:ok, pipeline_struct} <- API.create_pipeline(ng) do
       model = %Model{
         pipeline: pipeline_struct,
-        name: model_name || Path.basename(hef_path),
-        input_infos: pipeline_struct.input_vstream_infos,
-        output_infos: pipeline_struct.output_vstream_infos
+        name: model_name || Path.basename(hef_path)
       }
       {:ok, model}
     else
