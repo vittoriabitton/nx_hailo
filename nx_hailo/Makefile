@@ -12,7 +12,7 @@ PRIV_DIR = $(MIX_APP_PATH)/priv
 NX_HAILO_SO = $(PRIV_DIR)/libnx_hailo.so
 
 # HailoRT configuration
-HAILO_INCLUDE_DIR = $(NX_HAILO_DIR)/include
+# HAILO_INCLUDE_DIR is set in mix.exs
 HAILO_LIB_DIR ?= /usr/lib
 
 # Build flags
@@ -22,12 +22,6 @@ CFLAGS += -Wno-deprecated-declarations
 # LDFLAGS must include the sysroot's lib directory for cross-compilation
 # HAILORT_LIB_DIR defaulting to the setup in UTM
 HAILORT_LIB_DIR ?= ../hailo_rpi5/.nerves/artifacts/hailo_rpi5-portable-0.4.0/target/usr/lib
-
-# This should point to the include directory for libhailort
-# In the cloned hailort repo, this is hailort/libhailort/include/
-# In an installed hailort environment in raspbian, this is /usr/include/hailo
-# TO-DO: autodownload this directory
-HAILO_INCLUDE_DIR ?= /usr/include/hailo
 
 LDFLAGS = -shared -L$(HAILORT_LIB_DIR) -lhailort
 

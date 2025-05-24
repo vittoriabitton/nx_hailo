@@ -23,7 +23,9 @@ defmodule NxHailo.MixProject do
       make_env: fn ->
         %{
           "MIX_BUILD_EMBEDDED" => "#{Mix.Project.config()[:build_embedded]}",
-          "FINE_INCLUDE_DIR" => Fine.include_dir()
+          "FINE_INCLUDE_DIR" => Fine.include_dir(),
+          "HAILO_INCLUDE_DIR" =>
+            Path.join([__DIR__, "deps/hailort_include/hailort/libhailort/include"]) |> dbg()
         }
       end
     ]
@@ -85,7 +87,18 @@ defmodule NxHailo.MixProject do
       {:bandit, "~> 1.5"},
       {:nx, "~> 0.6"},
       {:elixir_make, "~> 0.6", runtime: false},
-      {:fine, "~> 0.1.0", runtime: false}
+      {:fine, "~> 0.1.0", runtime: false},
+      {
+        :hailort_include,
+        ">= 0.0.0",
+        github: "cocoa-xu/hailort",
+        ref: "v4.20.0-build-nerves",
+        app: false,
+        compile: false,
+        sparse: "hailort/libhailort/include"
+      },
+      {:req, "~> 0.4.0"},
+      {:yaml_elixir, "~> 2.10"}
     ]
   end
 
@@ -116,7 +129,43 @@ defmodule NxHailo.MixProject do
         "tailwind nx_hailo --minify",
         "esbuild nx_hailo --minify",
         "phx.digest"
-      ]
+      ],
+      "compile.download_yolov8_model": &download_yolov8_model/1
     ]
+  end
+
+  defp download_yolov8_model(_args) do
+    Application.ensure_all_started(:req)
+
+    dataset_yml =
+      "https://raw.githubusercontent.com/ultralytics/ultralytics/refs/heads/main/ultralytics/cfg/datasets/coco.yaml"
+
+    model_hef_url =
+      "https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/v2.15.0/hailo8l/yolov8m.hef"
+
+    priv = to_string(:code.priv_dir(@app))
+
+    download_dataset_to_json_file(dataset_yml, Path.join(priv, "yolov8m_classes.json"))
+    download_model(model_hef_url, Path.join(priv, "yolov8m.hef"))
+  end
+
+  defp download_dataset_to_json_file(url, filename) do
+    %{body: yaml_contents} = Req.get!(url)
+
+    contents =
+      yaml_contents
+      |> YamlElixir.read_from_string!()
+      |> Map.get("names")
+      |> Enum.sort_by(fn {index, _name} -> index end)
+      |> Enum.map(fn {_index, name} -> name end)
+      |> Jason.encode!()
+
+    File.write!(filename, contents)
+  end
+
+  defp download_model(url, filename) do
+    %{body: model_contents} = Req.get!(url)
+
+    File.write!(filename, model_contents)
   end
 end

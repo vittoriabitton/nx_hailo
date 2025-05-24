@@ -4,12 +4,17 @@ defmodule NxHailo.VStreamInfo do
   """
   defstruct name: nil,
             network_name: nil,
-            direction: nil, # :h2d or :d2h
+            # :h2d or :d2h
+            direction: nil,
             frame_size: 0,
-            format: %{},     # %{type: atom(), order: atom(), flags: atom()}
-            shape: nil,      # %{height: integer(), width: integer(), features: integer()} or nil
-            nms_shape: nil,  # %{number_of_classes: integer(), max_bboxes_per_class_or_total: integer()} or nil
-            quant_info: nil  # %{qp_zp: float(), qp_scale: float()} or nil
+            # %{type: atom(), order: atom(), flags: atom()}
+            format: %{},
+            # %{height: integer(), width: integer(), features: integer()} or nil
+            shape: nil,
+            # %{number_of_classes: integer(), max_bboxes_per_class_or_total: integer()} or nil
+            nms_shape: nil,
+            # %{qp_zp: float(), qp_scale: float()} or nil
+            quant_info: nil
 
   @type t :: %__MODULE__{
           name: String.t() | nil,
