@@ -11,8 +11,10 @@ defmodule NxHailo do
     Represents a loaded Hailo model, ready for inference.
     This struct encapsulates the inference pipeline and associated metadata.
     """
-    defstruct pipeline: nil, # Holds an %NxHailo.API.InferPipeline{}
-              name: nil     # e.g., HEF filename or a custom model name
+    # Holds an %NxHailo.API.InferPipeline{}
+    defstruct pipeline: nil,
+              # e.g., HEF filename or a custom model name
+              name: nil
   end
 
   @doc """
@@ -34,11 +36,13 @@ defmodule NxHailo do
         pipeline: pipeline_struct,
         name: model_name || Path.basename(hef_path)
       }
+
       {:ok, model}
     else
       # Consolidate error handling if needed, or pass through NIF/API errors
       {:error, reason} -> {:error, reason}
-      error_tuple -> error_tuple # For other unexpected error formats
+      # For other unexpected error formats
+      error_tuple -> error_tuple
     end
   end
 
