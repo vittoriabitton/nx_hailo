@@ -229,7 +229,7 @@ fine::Term create_pipeline(ErlNifEnv *env, fine::Term network_group_term) {
   resource->network_group = ng_res->network_group;
 
   // Return the resource term
-  return fine::encode(env, resource);
+  return fine_ok(env, resource);
 }
 
 // Helper function to construct an Erlang map for vstream info
@@ -274,12 +274,13 @@ fine::Term get_input_vstream_infos_from_ng(ErlNifEnv *env, fine::Term network_gr
       return fine_error_string(env, "Failed to get input vstream infos from network group: " + std::to_string(vstream_infos.status()));
   }
 
-  std::vector<ERL_NIF_TERM> result;
+  std::vector<ERL_NIF_TERM> map_terms_vector;
   for (const auto &info : vstream_infos.value()) {
     uint32_t frame_size = hailort::HailoRTCommon::get_frame_size(info.shape, info.format);
-    result.push_back(make_vstream_info_erlang_map(env, info.name, static_cast<uint64_t>(frame_size)));
+    map_terms_vector.push_back(make_vstream_info_erlang_map(env, info.name, static_cast<uint64_t>(frame_size)));
   }
-  return fine_ok(env, result);
+  ERL_NIF_TERM list_of_maps_term = enif_make_list_from_array(env, map_terms_vector.data(), map_terms_vector.size());
+  return fine_ok(env, list_of_maps_term);
 }
 
 // NIF function to get information about output vstreams from a NetworkGroup
@@ -296,12 +297,13 @@ fine::Term get_output_vstream_infos_from_ng(ErlNifEnv *env, fine::Term network_g
       return fine_error_string(env, "Failed to get output vstream infos from network group: " + std::to_string(vstream_infos.status()));
   }
 
-  std::vector<ERL_NIF_TERM> result;
+  std::vector<ERL_NIF_TERM> map_terms_vector;
   for (const auto &info : vstream_infos.value()) {
     uint32_t frame_size = hailort::HailoRTCommon::get_frame_size(info.shape, info.format);
-    result.push_back(make_vstream_info_erlang_map(env, info.name, static_cast<uint64_t>(frame_size)));
+    map_terms_vector.push_back(make_vstream_info_erlang_map(env, info.name, static_cast<uint64_t>(frame_size)));
   }
-  return fine_ok(env, result);
+  ERL_NIF_TERM list_of_maps_term = enif_make_list_from_array(env, map_terms_vector.data(), map_terms_vector.size());
+  return fine_ok(env, list_of_maps_term);
 }
 
 // NIF function to get information about input vstreams from a pipeline
@@ -314,30 +316,31 @@ fine::Term get_input_vstream_infos_from_pipeline(ErlNifEnv *env, fine::Term pipe
     }
 
     auto input_vstreams = pipeline_res->pipeline->get_input_vstreams();
-    std::vector<ERL_NIF_TERM> result;
+    std::vector<ERL_NIF_TERM> map_terms_vector;
     for (const auto &vstream : input_vstreams) {
-        result.push_back(get_vstream_info_map(env, vstream.get()));
+        map_terms_vector.push_back(get_vstream_info_map(env, vstream.get()));
     }
-    return fine_ok(env, result);
+    ERL_NIF_TERM list_of_maps_term = enif_make_list_from_array(env, map_terms_vector.data(), map_terms_vector.size());
+
+    return fine_ok(env, fine::Term(list_of_maps_term));
 }
 
 // NIF function to get information about output vstreams
 fine::Term get_output_vstream_infos_from_pipeline(ErlNifEnv *env, fine::Term pipeline_term) {
-  // Get the pipeline resource from the input term
   fine::ResourcePtr<InferPipelineResource> pipeline_res;
   try {
-    pipeline_res = fine::decode<fine::ResourcePtr<InferPipelineResource>>(
-        env, pipeline_term);
+    pipeline_res = fine::decode<fine::ResourcePtr<InferPipelineResource>>(env, pipeline_term);
   } catch (const std::exception &e) {
-    return fine_error_string(env, "Invalid pipeline resource");
+    return fine_error_string(env, "Invalid pipeline resource for getting output vstream infos");
   }
 
   auto output_vstreams = pipeline_res->pipeline->get_output_vstreams();
-  std::vector<ERL_NIF_TERM> result;
-  for (const auto &vstream : output_vstreams) {
-    result.push_back(get_vstream_info_map(env, vstream.get()));
-  }
-  return fine_ok(env, result);
+  std::vector<ERL_NIF_TERM> map_terms_vector;
+    for (const auto &vstream : output_vstreams) {
+        map_terms_vector.push_back(get_vstream_info_map(env, vstream.get()));
+    }
+  ERL_NIF_TERM list_of_maps_term = enif_make_list_from_array(env, map_terms_vector.data(), map_terms_vector.size());
+  return fine_ok(env, fine::Term(list_of_maps_term));
 }
 
 // NIF function to run inference using a pipeline

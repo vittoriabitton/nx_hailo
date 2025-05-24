@@ -4,14 +4,19 @@ defmodule NxHailo.Hailo do
 
   This module provides high-level functions for loading models and running inference
   using Hailo AI accelerators through HailoRT.
+  NOTE: This module provides a more direct NIF interaction layer.
+  For a more user-friendly, higher-level API, see the main `NxHailo` module.
   """
 
   alias NxHailo.NIF
+  # We refer to the main NxHailo module for the new top-level API if needed.
+  # alias NxHailo # This line is only needed if calling functions from the main NxHailo module.
 
   @doc """
   Loads a network from a Hailo Executable Format (HEF) file.
 
   Returns a network group resource reference that can be used to create inference pipelines.
+  This is a lower-level function directly interacting with NIFs.
 
   ## Parameters
 
@@ -31,9 +36,7 @@ defmodule NxHailo.Hailo do
 
   @doc """
   Creates an inference pipeline from a network group.
-
-  The pipeline is optimized for inference and handles the data flow between
-  host and device.
+  This is a lower-level function directly interacting with NIFs.
 
   ## Parameters
 
@@ -54,8 +57,7 @@ defmodule NxHailo.Hailo do
 
   @doc """
   Returns information about the output vstreams of an inference pipeline.
-
-  This information includes the name and frame size of each output vstream.
+  This is a lower-level function directly interacting with NIFs.
 
   ## Parameters
 
@@ -77,10 +79,7 @@ defmodule NxHailo.Hailo do
 
   @doc """
   Runs inference using the provided pipeline and input data.
-
-  The input data should be a map where keys are input vstream names and values are binaries
-  containing the raw input data. The function returns a map with output vstream names
-  as keys and binaries of output data as values.
+  This is a lower-level function directly interacting with NIFs.
 
   ## Parameters
 
@@ -108,6 +107,7 @@ defmodule NxHailo.Hailo do
 
   @doc """
   Convenience function to load a network, create a pipeline, and run inference in one call.
+  This function now uses the top-level `NxHailo.load/1` and `NxHailo.infer/2` API.
 
   ## Parameters
 
@@ -121,10 +121,17 @@ defmodule NxHailo.Hailo do
   """
   @spec run_inference(String.t(), map()) :: {:ok, map()} | {:error, String.t()}
   def run_inference(hef_path, input_data) when is_binary(hef_path) and is_map(input_data) do
-    with {:ok, network_group} <- load_network(hef_path),
-         {:ok, pipeline} <- create_pipeline(network_group),
-         {:ok, results} <- infer(pipeline, input_data) do
+    # Ensure the main NxHailo module is aliased if not already globally available
+    # or use fully qualified NxHailo.load and NxHailo.infer if prefered.
+    # Assuming Elixir's default module resolution or a project-wide alias for NxHailo.
+    with {:ok, model} <- NxHailo.load(hef_path),
+         {:ok, results} <- NxHailo.infer(model, input_data) do
       {:ok, results}
+    else
+      # Propagate errors from load or infer
+      {:error, _reason} = error -> error
+      # Handle any other unexpected non-error tuple from with (should not happen with ok/error tuples)
+      other_error -> {:error, "Unexpected error in run_inference: #{inspect(other_error)}"}
     end
   end
 end

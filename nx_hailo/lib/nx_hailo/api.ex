@@ -80,21 +80,16 @@ defmodule NxHailo.API do
   Returns `{:ok, %InferPipeline{}}` or `{:error, reason}`.
   """
   def create_pipeline(%ConfiguredNetworkGroup{ref: ng_ref} = _network_group) do
-    case NIF.create_pipeline(ng_ref) do
-      {:ok, pipeline_ref} ->
-        with {:ok, input_infos} <- NIF.get_input_vstream_infos_from_pipeline(pipeline_ref),
-             {:ok, output_infos} <- NIF.get_output_vstream_infos_from_pipeline(pipeline_ref) do
-          {:ok,
-           %InferPipeline{
-             ref: pipeline_ref,
-             network_group_ref: ng_ref,
-             input_vstream_infos: transform_vstream_infos(input_infos),
-             output_vstream_infos: transform_vstream_infos(output_infos)
-           }}
-        else
-          err -> {:error, "Failed to get vstream info from pipeline: #{inspect(err)}"}
-        end
-      error -> error
+    with {:ok, pipeline_ref} <- NIF.create_pipeline(ng_ref),
+         {:ok, input_infos} <- NIF.get_input_vstream_infos_from_pipeline(pipeline_ref),
+        {:ok, output_infos} <- NIF.get_output_vstream_infos_from_pipeline(pipeline_ref) do
+      {:ok,
+        %InferPipeline{
+          ref: pipeline_ref,
+          network_group_ref: ng_ref,
+          input_vstream_infos: transform_vstream_infos(input_infos),
+          output_vstream_infos: transform_vstream_infos(output_infos)
+        }}
     end
   end
 
