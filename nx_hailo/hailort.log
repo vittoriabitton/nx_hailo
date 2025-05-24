@@ -1,0 +1,23 @@
+[2025-05-22 10:55:43.066] [24731] [HailoRT] [info] [vdevice.cpp:523] [create] Creating vdevice with params: device_count: 1, scheduling_algorithm: ROUND_ROBIN, multi_process_service: false
+[2025-05-22 10:55:43.077] [24731] [HailoRT] [info] [device.cpp:49] [Device] OS Version: Linux 6.12.25+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.12.25-1+rpt1 (2025-04-30) aarch64
+[2025-05-22 10:55:43.079] [24731] [HailoRT] [info] [control.cpp:108] [control__parse_identify_results] firmware_version is: 4.20.0
+[2025-05-22 10:55:43.079] [24731] [HailoRT] [info] [vdevice.cpp:651] [create] VDevice Infos: 0001:01:00.0
+[2025-05-22 10:55:43.205] [24731] [HailoRT] [info] [internal_buffer_manager.cpp:204] [print_execution_results] Planned internal buffer memory: CMA memory 0, user memory 525824. memory to edge layer usage factor is 1
+[2025-05-22 10:55:43.205] [24731] [HailoRT] [info] [internal_buffer_manager.cpp:212] [print_execution_results] Default Internal buffer planner executed successfully
+[2025-05-22 10:55:43.222] [24731] [HailoRT] [info] [device_internal.cpp:57] [configure] Configuring HEF took 22.832716 milliseconds
+[2025-05-22 10:55:43.229] [24731] [HailoRT] [info] [vdevice.cpp:749] [configure] Configuring HEF on VDevice took 30.032079 milliseconds
+[2025-05-22 10:56:03.677] [24731] [HailoRT] [info] [edge_elements.cpp:52] [create] Created (HwWriteEl2centernet_resnet_v1_18_postprocess/input_layer1 | hw_frame_size: 786432)
+[2025-05-22 10:56:03.677] [24731] [HailoRT] [info] [vstream.cpp:754] [InputVStreamImpl] Creating centernet_resnet_v1_18_postprocess/input_layer1...
+[2025-05-22 10:56:03.677] [24731] [HailoRT] [info] [vstream_builder.cpp:102] [create_inputs] Input pipeline 'centernet_resnet_v1_18_postprocess/input_layer1': (HwWriteEl2centernet_resnet_v1_18_postprocess/input_layer1 | hw_frame_size: 786432) >> HW
+[2025-05-22 10:56:03.677] [24731] [HailoRT] [info] [edge_elements.cpp:287] [create] Created (HwReadEl2centernet_resnet_v1_18_postprocess/conv28 | hw_frame_size: 32768)
+[2025-05-22 10:56:03.677] [24731] [HailoRT] [info] [queue_elements.cpp:800] [create] Created (UserBuffQEl2centernet_resnet_v1_18_postprocess/conv28 | timeout: 10s)
+[2025-05-22 10:56:03.677] [24731] [HailoRT] [info] [vstream.cpp:1114] [OutputVStreamImpl] Creating centernet_resnet_v1_18_postprocess/conv28...
+[2025-05-22 10:56:03.677] [24731] [HailoRT] [info] [vstream_builder.cpp:220] [create_outputs] Output pipeline 'centernet_resnet_v1_18_postprocess/conv28': HW >> (HwReadEl2centernet_resnet_v1_18_postprocess/conv28 | hw_frame_size: 32768) >> (UserBuffQEl2centernet_resnet_v1_18_postprocess/conv28 | timeout: 10s)
+[2025-05-22 10:56:03.677] [24731] [HailoRT] [info] [edge_elements.cpp:287] [create] Created (HwReadEl0centernet_resnet_v1_18_postprocess/conv29 | hw_frame_size: 32768)
+[2025-05-22 10:56:03.677] [24731] [HailoRT] [info] [queue_elements.cpp:800] [create] Created (UserBuffQEl0centernet_resnet_v1_18_postprocess/conv29 | timeout: 10s)
+[2025-05-22 10:56:03.677] [24731] [HailoRT] [info] [vstream.cpp:1114] [OutputVStreamImpl] Creating centernet_resnet_v1_18_postprocess/conv29...
+[2025-05-22 10:56:03.677] [24731] [HailoRT] [info] [vstream_builder.cpp:220] [create_outputs] Output pipeline 'centernet_resnet_v1_18_postprocess/conv29': HW >> (HwReadEl0centernet_resnet_v1_18_postprocess/conv29 | hw_frame_size: 32768) >> (UserBuffQEl0centernet_resnet_v1_18_postprocess/conv29 | timeout: 10s)
+[2025-05-22 10:56:03.677] [24731] [HailoRT] [info] [edge_elements.cpp:287] [create] Created (HwReadEl3centernet_resnet_v1_18_postprocess/ew_add10 | hw_frame_size: 2621440)
+[2025-05-22 10:56:03.677] [24731] [HailoRT] [info] [queue_elements.cpp:800] [create] Created (UserBuffQEl3centernet_resnet_v1_18_postprocess/ew_add10 | timeout: 10s)
+[2025-05-22 10:56:03.677] [24731] [HailoRT] [info] [vstream.cpp:1114] [OutputVStreamImpl] Creating centernet_resnet_v1_18_postprocess/ew_add10...
+[2025-05-22 10:56:03.677] [24731] [HailoRT] [info] [vstream_builder.cpp:220] [create_outputs] Output pipeline 'centernet_resnet_v1_18_postprocess/ew_add10': HW >> (HwReadEl3centernet_resnet_v1_18_postprocess/ew_add10 | hw_frame_size: 2621440) >> (UserBuffQEl3centernet_resnet_v1_18_postprocess/ew_add10 | timeout: 10s)

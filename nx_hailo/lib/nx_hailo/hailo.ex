@@ -69,7 +69,7 @@ defmodule NxHailo.Hailo do
   """
   @spec output_vstream_info(reference()) :: {:ok, list(map())} | {:error, String.t()}
   def output_vstream_info(pipeline) do
-    case NIF.get_output_vstream_info(pipeline) do
+    case NIF.get_output_vstream_infos_from_pipeline(pipeline) do
       {:error, reason} -> {:error, reason}
       info -> {:ok, info}
     end

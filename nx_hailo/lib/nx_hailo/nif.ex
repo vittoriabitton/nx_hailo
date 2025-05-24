@@ -23,8 +23,13 @@ defmodule NxHailo.NIF do
   end
 
   # NIF functions
+  defnif create_vdevice()
   defnif load_network_group(_hef_path)
-  defnif create_pipeline(_network_group)
-  defnif get_output_vstream_info(_pipeline)
-  defnif infer(_pipeline, _input_data)
+  defnif configure_network_group(_vdevice_ref, _hef_path)
+  defnif create_pipeline(_network_group_ref)
+  defnif get_input_vstream_infos_from_ng(_network_group_ref)
+  defnif get_output_vstream_infos_from_ng(_network_group_ref)
+  defnif get_input_vstream_infos_from_pipeline(_pipeline_ref)
+  defnif get_output_vstream_infos_from_pipeline(_pipeline_ref)
+  defnif infer(_pipeline_ref, _input_data)
 end
