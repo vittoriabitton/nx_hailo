@@ -4,6 +4,8 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <erl_nif.h>
+#include <iostream>
 
 // Resource type for VDevice
 struct VDeviceResource {
@@ -574,6 +576,14 @@ for (const auto &pair : output_data_mem_views) {
     printf("DEBUG: Output '%s': ptr=%p, size=%zu\n",
            pair.first.c_str(), pair.second.data(), pair.second.size());
 }
+
+// In your C++ code, print the actual NMS shape info:
+auto output_vstream_info = output_vstreams[0].get().get_info();
+std::cout << "NMS Shape Info:" << std::endl;
+std::cout << "  number_of_classes: " << output_vstream_info.nms_shape.number_of_classes << std::endl;
+std::cout << "  max_bboxes_per_class: " << output_vstream_info.nms_shape.max_bboxes_per_class << std::endl;
+std::cout << "  max_bboxes_total: " << output_vstream_info.nms_shape.max_bboxes_total << std::endl;
+std::cout << "Format order: " << output_vstream_info.format.order << std::endl;
 
   // Run inference
   hailo_status status = pipeline_res->pipeline->infer(
