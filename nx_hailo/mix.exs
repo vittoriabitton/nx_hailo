@@ -19,7 +19,7 @@ defmodule NxHailo.MixProject do
       aliases: aliases(),
       releases: [{@app, release()}],
       preferred_cli_target: [run: :host, test: :host],
-      compilers: [:elixir_make] ++ Mix.compilers(),
+      compilers: [:download_yolov8_model, :elixir_make] ++ Mix.compilers(),
       make_env: fn ->
         %{
           "MIX_BUILD_EMBEDDED" => "#{Mix.Project.config()[:build_embedded]}",
@@ -98,7 +98,12 @@ defmodule NxHailo.MixProject do
         sparse: "hailort/libhailort/include"
       },
       {:req, "~> 0.4.0"},
-      {:yaml_elixir, "~> 2.10"}
+      {:yaml_elixir, "~> 2.10"},
+      # TO-DO: we can either vendor in the library,
+      # or do some shenanigans where we make ortex an optional dependency
+      # and define a no-op version of the library so that yolo can be used
+      # without ortex. OR we submit a PR for this.
+      {:yolo, "~> 0.1.2"}
     ]
   end
 
@@ -130,12 +135,12 @@ defmodule NxHailo.MixProject do
         "esbuild nx_hailo --minify",
         "phx.digest"
       ],
-      "compile.download_yolov8_model": &download_yolov8_model/1
+      "compile.download_yolov8_model": [&download_yolov8_model/1]
     ]
   end
 
   defp download_yolov8_model(_args) do
-    Application.ensure_all_started(:req)
+    {:ok, _} = Application.ensure_all_started([:req])
 
     dataset_yml =
       "https://raw.githubusercontent.com/ultralytics/ultralytics/refs/heads/main/ultralytics/cfg/datasets/coco.yaml"
@@ -143,29 +148,46 @@ defmodule NxHailo.MixProject do
     model_hef_url =
       "https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/v2.15.0/hailo8l/yolov8m.hef"
 
-    priv = to_string(:code.priv_dir(@app))
+    model_zip_url =
+      "https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ObjectDetection/Detection-COCO/yolo/yolov8m/2023-02-02/yolov8m.zip"
+
+    priv = Path.join(__DIR__, "priv")
 
     download_dataset_to_json_file(dataset_yml, Path.join(priv, "yolov8m_classes.json"))
     download_model(model_hef_url, Path.join(priv, "yolov8m.hef"))
+    download_model(model_zip_url, Path.join(priv, "yolov8m.zip"))
+
+    zip_path = Path.join(priv, "yolov8m.zip")
+
+    {:ok, _} =
+      :zip.extract(String.to_charlist(zip_path), cwd: String.to_charlist(priv))
   end
 
   defp download_dataset_to_json_file(url, filename) do
-    %{body: yaml_contents} = Req.get!(url)
+    if File.exists?(filename) do
+      :ok
+    else
+      %{body: yaml_contents} = Req.get!(url)
 
-    contents =
-      yaml_contents
-      |> YamlElixir.read_from_string!()
-      |> Map.get("names")
-      |> Enum.sort_by(fn {index, _name} -> index end)
-      |> Enum.map(fn {_index, name} -> name end)
-      |> Jason.encode!()
+      contents =
+        yaml_contents
+        |> YamlElixir.read_from_string!()
+        |> Map.get("names")
+        |> Enum.sort_by(fn {index, _name} -> index end)
+        |> Enum.map(fn {_index, name} -> name end)
+        |> Jason.encode!()
 
-    File.write!(filename, contents)
+      File.write!(filename, contents)
+    end
   end
 
   defp download_model(url, filename) do
-    %{body: model_contents} = Req.get!(url)
+    if File.exists?(filename) do
+      :ok
+    else
+      %{body: model_contents} = Req.get!(url)
 
-    File.write!(filename, model_contents)
+      File.write!(filename, model_contents)
+    end
   end
 end

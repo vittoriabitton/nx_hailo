@@ -23,3 +23,6 @@ erl_crash.dump
 
 /priv/*.json
 /priv/*.hef
+/priv/*.zip
+/priv/*.onnx
+hailort.log

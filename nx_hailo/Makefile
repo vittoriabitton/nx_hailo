@@ -16,8 +16,14 @@ NX_HAILO_SO = $(PRIV_DIR)/libnx_hailo.so
 HAILO_LIB_DIR ?= /usr/lib
 
 # Build flags
-CFLAGS += -I$(FINE_INCLUDE_DIR) -I$(HAILO_INCLUDE_DIR) -fPIC -fvisibility=hidden -I$(ERTS_INCLUDE_DIR) -Wall -std=c++17 -O3
+CFLAGS += -I$(FINE_INCLUDE_DIR) -I$(HAILO_INCLUDE_DIR) -fPIC -fvisibility=hidden -I$(ERTS_INCLUDE_DIR) -Wall -std=c++17
 CFLAGS += -Wno-deprecated-declarations
+
+ifdef DEBUG
+CFLAGS += -g
+else
+CFLAGS += -O3
+endif
 
 # LDFLAGS must include the sysroot's lib directory for cross-compilation
 # HAILORT_LIB_DIR defaulting to the setup in UTM

@@ -173,6 +173,7 @@ defmodule NxHailo.API do
   end
 
   defp validate_input_data(expected_infos, input_data) do
+    dbg(expected_infos)
     expected_names = Enum.map(expected_infos, & &1.name)
     provided_names = Map.keys(input_data)
 

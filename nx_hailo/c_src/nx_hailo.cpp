@@ -505,10 +505,10 @@ fine::Term infer(ErlNifEnv *env, fine::Term pipeline_term,
   }
 
   // Get the input data map from the input term
-  std::map<std::string, ERL_NIF_TERM> input_map;
+  std::map<std::string, std::string> input_map;
   try {
     input_map =
-        fine::decode<std::map<std::string, ERL_NIF_TERM>>(env, input_data_term);
+        fine::decode<std::map<std::string, std::string>>(env, input_data_term);
   } catch (const std::exception &e) {
     return fine_error_string(env, "Input data must be a map");
   }
@@ -528,20 +528,15 @@ fine::Term infer(ErlNifEnv *env, fine::Term pipeline_term,
     if (it == input_map.end()) {
       return fine_error_string(env, "Missing input data for vstream: " + name);
     }
-    ErlNifBinary binary;
-    if (!enif_inspect_binary(env, it->second, &binary)) {
-      return fine_error_string(env, "Input data for vstream " + name +
-                                        " must be a binary");
-    }
+    std::string& binary = it->second;
     size_t expected_size = input_vstream.get().get_frame_size() * frames_count;
-    if (binary.size != expected_size) {
+    if (binary.size() != expected_size) {
       return fine_error_string(
           env, "Invalid input data size for vstream " + name +
                    ". Expected: " + std::to_string(expected_size) +
-                   ", Got: " + std::to_string(binary.size));
+                   ", Got: " + std::to_string(binary.size()));
     }
-    input_data_mem_views.emplace(name,
-                                 hailort::MemoryView(binary.data, binary.size));
+    input_data_mem_views.emplace(name, hailort::MemoryView(const_cast<void *>(static_cast<const void *>(binary.data())), binary.size()));
   }
 
   // Prepare output data map and memory views
@@ -555,6 +550,30 @@ fine::Term infer(ErlNifEnv *env, fine::Term pipeline_term,
     output_data_mem_views.emplace(
         name, hailort::MemoryView(output_buffer.data(), output_buffer.size()));
   }
+
+  // Validate input data before inference
+for (const auto &pair : input_data_mem_views) {
+    printf("DEBUG: Input '%s': ptr=%p, size=%zu\n",
+           pair.first.c_str(), pair.second.data(), pair.second.size());
+
+    // Check if pointer is valid
+    if (pair.second.data() == nullptr) {
+        printf("ERROR: Null pointer for input '%s'\n", pair.first.c_str());
+        return fine_error_string(env, "Null input data for: " + pair.first);
+    }
+
+    // Check if size is reasonable
+    if (pair.second.size() == 0) {
+        printf("ERROR: Zero size for input '%s'\n", pair.first.c_str());
+        return fine_error_string(env, "Zero size input data for: " + pair.first);
+    }
+}
+
+// Validate output data
+for (const auto &pair : output_data_mem_views) {
+    printf("DEBUG: Output '%s': ptr=%p, size=%zu\n",
+           pair.first.c_str(), pair.second.data(), pair.second.size());
+}
 
   // Run inference
   hailo_status status = pipeline_res->pipeline->infer(
@@ -571,6 +590,7 @@ fine::Term infer(ErlNifEnv *env, fine::Term pipeline_term,
     const auto &output_buffer = output_data[name];
     output_map[name] = std::string(reinterpret_cast<const char *>(output_buffer.data()), output_buffer.size());
   }
+
   return fine_ok(env, output_map);
 }
 
