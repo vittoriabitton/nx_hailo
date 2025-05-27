@@ -3,12 +3,7 @@ defmodule NxHailo.Video do
   Video capture utilities using Evision.
   """
   alias Evision, as: CV
-
-  ip = "192.168.68.105"
-  port = "554"
-  user = "admin"
-  pass = "adminadmin5"
-  @url "rtsp://#{user}:#{pass}@#{ip}:#{port}/mode=real&idc=1&ids=1"
+  require Logger
 
   # Evision.imwrite("/tmp/frame.png", mat)
   # no host
@@ -16,8 +11,36 @@ defmodule NxHailo.Video do
 
   # open /tmp/frame.png
 
-  def get_video_capture(url \\ @url) do
-    cap = CV.VideoCapture.videoCapture(url)
+  @doc """
+  Finds the first working camera device by trying each /dev/video* device.
+  Returns the device path if found, nil otherwise.
+  """
+  def find_working_camera do
+    # Get list of video devices
+    case System.cmd("ls", ["/dev/video*"]) do
+      {devices, 0} ->
+        devices
+        |> String.split("\n")
+        |> Enum.find(fn device ->
+          cap = CV.VideoCapture.videoCapture(device)
+
+          case CV.VideoCapture.isOpened(cap) do
+            true ->
+              CV.VideoCapture.release(cap)
+              true
+
+            false ->
+              false
+          end
+        end)
+
+      _ ->
+        nil
+    end
+  end
+
+  def get_video_capture(device \\ find_working_camera()) do
+    cap = CV.VideoCapture.videoCapture(device)
     # Force the buffer size to 1 so that we can easily get
     # the frame that the camera currently is seeing.
     CV.VideoCapture.set(cap, CV.Constant.cv_CAP_PROP_BUFFERSIZE(), 1)
@@ -43,5 +66,27 @@ defmodule NxHailo.Video do
     # but given that we don't have any actual operation using this function,
     # returning the mat is more flexible.
     mat
+  end
+
+  @doc """
+  Starts a local video stream that saves frames to a temporary file.
+  The frames can be viewed by running `open /tmp/frame.png` in another terminal.
+  """
+  def start_local_stream do
+    # Get the video capture
+    cap = get_video_capture()
+
+    # Start streaming in a separate process
+    spawn(fn -> stream_frames(cap) end)
+
+    Logger.info("Local video stream started. Run 'open /tmp/frame.png' to view frames.")
+  end
+
+  defp stream_frames(cap) do
+    frame = get_realtime_frame(cap)
+
+    CV.imwrite("/tmp/frame.png", frame)
+
+    stream_frames(cap)
   end
 end
