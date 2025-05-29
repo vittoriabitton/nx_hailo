@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../hailort/hailort"
+		},
+		{
+			"path": "../hailo_model_zoo"
+		}
+	],
+	"settings": {}
+}

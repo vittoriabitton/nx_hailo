@@ -19,13 +19,13 @@ defmodule NxHailo.MixProject do
       aliases: aliases(),
       releases: [{@app, release()}],
       preferred_cli_target: [run: :host, test: :host],
-      compilers: [:download_yolov8_model, :elixir_make] ++ Mix.compilers(),
+      compilers: [:download_models, :elixir_make] ++ Mix.compilers(),
       make_env: fn ->
         %{
           "MIX_BUILD_EMBEDDED" => "#{Mix.Project.config()[:build_embedded]}",
           "FINE_INCLUDE_DIR" => Fine.include_dir(),
           "HAILO_INCLUDE_DIR" =>
-            Path.join([__DIR__, "deps/hailort_include/hailort/libhailort/include"]) |> dbg()
+            Path.join([__DIR__, "deps/hailort_include/hailort/libhailort/include"])
         }
       end
     ]
@@ -135,7 +135,7 @@ defmodule NxHailo.MixProject do
         "esbuild nx_hailo --minify",
         "phx.digest"
       ],
-      "compile.download_yolov8_model": [&download_yolov8_model/1]
+      "compile.download_models": [&download_yolov8_model/1, &download_resnet_model/1]
     ]
   end
 
@@ -153,14 +153,22 @@ defmodule NxHailo.MixProject do
 
     priv = Path.join(__DIR__, "priv")
 
+    File.mkdir_p!(priv)
+
     download_dataset_to_json_file(dataset_yml, Path.join(priv, "yolov8m_classes.json"))
     download_model(model_hef_url, Path.join(priv, "yolov8m.hef"))
     download_model(model_zip_url, Path.join(priv, "yolov8m.zip"))
+  end
 
-    zip_path = Path.join(priv, "yolov8m.zip")
+  defp download_resnet_model(_args) do
+    model_hef_url =
+      "https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/v2.15.0/hailo8l/resnet_v1_50.hef"
 
-    {:ok, _} =
-      :zip.extract(String.to_charlist(zip_path), cwd: String.to_charlist(priv))
+    priv = Path.join(__DIR__, "priv")
+
+    File.mkdir_p!(priv)
+
+    download_model(model_hef_url, Path.join(priv, "resnet50.hef"))
   end
 
   defp download_dataset_to_json_file(url, filename) do
@@ -182,12 +190,24 @@ defmodule NxHailo.MixProject do
   end
 
   defp download_model(url, filename) do
-    if File.exists?(filename) do
+    marker_filename = filename <> ".marker"
+
+    if File.exists?(marker_filename) do
+      IO.puts("Model already exists: #{filename}. Skipping download.")
       :ok
     else
-      %{body: model_contents} = Req.get!(url)
+      IO.puts("Model does not exist: #{filename}. Downloading...")
+      %{headers: headers, body: response_body} = Req.get!(url)
 
-      File.write!(filename, model_contents)
+      if "application/zip" in headers["content-type"] do
+        for {output_filename, contents} <- response_body do
+          File.write!(Path.join(Path.dirname(filename), to_string(output_filename)), contents)
+        end
+      else
+        File.write!(filename, response_body)
+      end
+
+      File.write!(marker_filename, "")
     end
   end
 end

@@ -1,5 +1,5 @@
 # Parse the complete NMS structure
-defmodule NxHailo.Hailo.NMSParser do
+defmodule NxHailo.Hailo.YoloV8Parser do
   def parse_nms_output(binary_data, num_classes) do
     parse_classes(binary_data, 0, 0, num_classes, [])
   end
@@ -47,16 +47,21 @@ defmodule NxHailo.Hailo.NMSParser do
           []
         end
 
-      class_info = %{
-        class_id: class_id,
-        count: detection_count,
-        detections: detections
-      }
+      acc =
+        if detections == [] do
+          acc
+        else
+          class_info = %{
+            class_id: class_id,
+            count: detection_count,
+            detections: detections
+          }
+
+          [class_info | acc]
+        end
 
       # Move to next class
-      parse_classes(binary_data, offset + class_floats, class_id + 1, num_classes, [
-        class_info | acc
-      ])
+      parse_classes(binary_data, offset + class_floats, class_id + 1, num_classes, acc)
     end
   end
 

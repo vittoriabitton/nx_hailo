@@ -26,3 +26,4 @@ erl_crash.dump
 /priv/*.zip
 /priv/*.onnx
 hailort.log
+/priv/*.marker
