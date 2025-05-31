@@ -1,6 +1,6 @@
 # NxHailo
 
-## Building (macOS)
+## Building (macOS via Ubuntu on UTM or Docker)
 
 - Install elixir and erlang
 - Setup github SSH keys
