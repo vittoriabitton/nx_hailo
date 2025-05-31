@@ -143,16 +143,12 @@ defmodule NxHailo.MixProject do
     model_hef_url =
       "https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/v2.15.0/hailo8l/yolov8m.hef"
 
-    model_zip_url =
-      "https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ObjectDetection/Detection-COCO/yolo/yolov8m/2023-02-02/yolov8m.zip"
-
     priv = Path.join(__DIR__, "priv")
 
     File.mkdir_p!(priv)
 
     download_dataset_to_json_file(dataset_yml, Path.join(priv, "yolov8m_classes.json"))
     download_model(model_hef_url, Path.join(priv, "yolov8m.hef"))
-    download_model(model_zip_url, Path.join(priv, "yolov8m.zip"))
   end
 
   defp download_dataset_to_json_file(url, filename) do
