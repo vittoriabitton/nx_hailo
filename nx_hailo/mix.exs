@@ -19,13 +19,13 @@ defmodule NxHailo.MixProject do
       aliases: aliases(),
       releases: [{@app, release()}],
       preferred_cli_target: [run: :host, test: :host],
-      compilers: [:elixir_make] ++ Mix.compilers(),
+      compilers: [:download_models, :elixir_make] ++ Mix.compilers(),
       make_env: fn ->
         %{
           "MIX_BUILD_EMBEDDED" => "#{Mix.Project.config()[:build_embedded]}",
           "FINE_INCLUDE_DIR" => Fine.include_dir(),
           "HAILO_INCLUDE_DIR" =>
-            Path.join([__DIR__, "deps/hailort_include/hailort/libhailort/include"]) |> dbg()
+            Path.join([__DIR__, "deps/hailort_include/hailort/libhailort/include"])
         }
       end
     ]
@@ -104,12 +104,12 @@ defmodule NxHailo.MixProject do
   defp aliases do
     [
       setup: ["deps.get"],
-      "compile.download_yolov8_model": &download_yolov8_model/1
+      "compile.download_models": [&download_yolov8_model/1]
     ]
   end
 
   defp download_yolov8_model(_args) do
-    Application.ensure_all_started(:req)
+    {:ok, _} = Application.ensure_all_started([:req])
 
     dataset_yml =
       "https://raw.githubusercontent.com/ultralytics/ultralytics/refs/heads/main/ultralytics/cfg/datasets/coco.yaml"
@@ -117,29 +117,51 @@ defmodule NxHailo.MixProject do
     model_hef_url =
       "https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/v2.15.0/hailo8l/yolov8m.hef"
 
-    priv = to_string(:code.priv_dir(@app))
+    priv = Path.join(__DIR__, "priv")
+
+    File.mkdir_p!(priv)
 
     download_dataset_to_json_file(dataset_yml, Path.join(priv, "yolov8m_classes.json"))
     download_model(model_hef_url, Path.join(priv, "yolov8m.hef"))
   end
 
   defp download_dataset_to_json_file(url, filename) do
-    %{body: yaml_contents} = Req.get!(url)
+    if File.exists?(filename) do
+      :ok
+    else
+      %{body: yaml_contents} = Req.get!(url)
 
-    contents =
-      yaml_contents
-      |> YamlElixir.read_from_string!()
-      |> Map.get("names")
-      |> Enum.sort_by(fn {index, _name} -> index end)
-      |> Enum.map(fn {_index, name} -> name end)
-      |> Jason.encode!()
+      contents =
+        yaml_contents
+        |> YamlElixir.read_from_string!()
+        |> Map.get("names")
+        |> Enum.sort_by(fn {index, _name} -> index end)
+        |> Enum.map(fn {_index, name} -> name end)
+        |> Jason.encode!()
 
-    File.write!(filename, contents)
+      File.write!(filename, contents)
+    end
   end
 
   defp download_model(url, filename) do
-    %{body: model_contents} = Req.get!(url)
+    marker_filename = filename <> ".marker"
 
-    File.write!(filename, model_contents)
+    if File.exists?(marker_filename) do
+      IO.puts("Model already exists: #{filename}. Skipping download.")
+      :ok
+    else
+      IO.puts("Model does not exist: #{filename}. Downloading...")
+      %{headers: headers, body: response_body} = Req.get!(url)
+
+      if "application/zip" in headers["content-type"] do
+        for {output_filename, contents} <- response_body do
+          File.write!(Path.join(Path.dirname(filename), to_string(output_filename)), contents)
+        end
+      else
+        File.write!(filename, response_body)
+      end
+
+      File.write!(marker_filename, "")
+    end
   end
 end

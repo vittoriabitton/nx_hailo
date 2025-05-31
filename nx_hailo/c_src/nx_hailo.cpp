@@ -54,12 +54,12 @@ FINE_RESOURCE(NetworkGroupResource);
 FINE_RESOURCE(InferPipelineResource);
 
 fine::Term fine_error_string(ErlNifEnv *env, const std::string &message) {
-  std::tuple<fine::Atom, std::string> tagged_result(fine::Atom("error"), message);
+  std::tuple<fine::Atom, std::string> tagged_result(fine::Atom("error"),
+                                                    message);
   return fine::encode(env, tagged_result);
 }
 
-template <typename T>
-fine::Term fine_ok(ErlNifEnv *env, T value) {
+template <typename T> fine::Term fine_ok(ErlNifEnv *env, T value) {
   std::tuple<fine::Atom, T> tagged_result(fine::Atom("ok"), value);
   return fine::encode(env, tagged_result);
 }
@@ -67,35 +67,53 @@ fine::Term fine_ok(ErlNifEnv *env, T value) {
 // Helper function to convert hailo_format_type_t to Elixir atom
 fine::Atom format_type_to_atom(hailo_format_type_t type) {
   switch (type) {
-  case HAILO_FORMAT_TYPE_AUTO: return fine::Atom("auto");
-  case HAILO_FORMAT_TYPE_UINT8: return fine::Atom("uint8");
-  case HAILO_FORMAT_TYPE_UINT16: return fine::Atom("uint16");
-  case HAILO_FORMAT_TYPE_FLOAT32: return fine::Atom("float32");
-  default: return fine::Atom("unknown_type");
+  case HAILO_FORMAT_TYPE_AUTO:
+    return fine::Atom("auto");
+  case HAILO_FORMAT_TYPE_UINT8:
+    return fine::Atom("uint8");
+  case HAILO_FORMAT_TYPE_UINT16:
+    return fine::Atom("uint16");
+  case HAILO_FORMAT_TYPE_FLOAT32:
+    return fine::Atom("float32");
+  default:
+    return fine::Atom("unknown_type");
   }
 }
 
 // Helper function to convert hailo_format_order_t to Elixir atom
 fine::Atom format_order_to_atom(hailo_format_order_t order) {
   switch (order) {
-  case HAILO_FORMAT_ORDER_AUTO: return fine::Atom("auto");
-  case HAILO_FORMAT_ORDER_NHWC: return fine::Atom("nhwc");
-  case HAILO_FORMAT_ORDER_NHCW: return fine::Atom("nhcw");
-  case HAILO_FORMAT_ORDER_NCHW: return fine::Atom("nchw");
-  // case HAILO_FORMAT_ORDER_NCWH: return fine::Atom("ncwh"); // This was causing a compile error
-  case HAILO_FORMAT_ORDER_FCR: return fine::Atom("fcr");
-  case HAILO_FORMAT_ORDER_HAILO_NMS: return fine::Atom("hailo_nms");
-  case HAILO_FORMAT_ORDER_HAILO_NMS_WITH_BYTE_MASK: return fine::Atom("hailo_nms_with_byte_mask");
-  case HAILO_FORMAT_ORDER_HAILO_NMS_BY_CLASS: return fine::Atom("hailo_nms_by_class");
-  default: return fine::Atom("unknown_order");
+  case HAILO_FORMAT_ORDER_AUTO:
+    return fine::Atom("auto");
+  case HAILO_FORMAT_ORDER_NHWC:
+    return fine::Atom("nhwc");
+  case HAILO_FORMAT_ORDER_NHCW:
+    return fine::Atom("nhcw");
+  case HAILO_FORMAT_ORDER_NCHW:
+    return fine::Atom("nchw");
+  // case HAILO_FORMAT_ORDER_NCWH: return fine::Atom("ncwh"); // This was
+  // causing a compile error
+  case HAILO_FORMAT_ORDER_FCR:
+    return fine::Atom("fcr");
+  case HAILO_FORMAT_ORDER_HAILO_NMS:
+    return fine::Atom("hailo_nms");
+  case HAILO_FORMAT_ORDER_HAILO_NMS_WITH_BYTE_MASK:
+    return fine::Atom("hailo_nms_with_byte_mask");
+  case HAILO_FORMAT_ORDER_HAILO_NMS_BY_CLASS:
+    return fine::Atom("hailo_nms_by_class");
+  default:
+    return fine::Atom("unknown_order");
   }
 }
 
 // Helper function to convert hailo_format_flags_t to Elixir atom
 fine::Atom format_flags_to_atom(hailo_format_flags_t flags) {
-  if (flags == HAILO_FORMAT_FLAGS_NONE) return fine::Atom("none");
-  if (flags == HAILO_FORMAT_FLAGS_TRANSPOSED) return fine::Atom("transposed");
-  return fine::Atom("unknown_flags"); // Default if no specific known flag matches
+  if (flags == HAILO_FORMAT_FLAGS_NONE)
+    return fine::Atom("none");
+  if (flags == HAILO_FORMAT_FLAGS_TRANSPOSED)
+    return fine::Atom("transposed");
+  return fine::Atom(
+      "unknown_flags"); // Default if no specific known flag matches
 }
 
 // NIF function to create a VDevice
@@ -176,8 +194,8 @@ fine::Term configure_network_group(ErlNifEnv *env,
                                    fine::Term hef_path_term) {
   fine::ResourcePtr<VDeviceResource> vdevice_res;
   try {
-    vdevice_res =
-        fine::decode<fine::ResourcePtr<VDeviceResource>>(env, vdevice_resource_term);
+    vdevice_res = fine::decode<fine::ResourcePtr<VDeviceResource>>(
+        env, vdevice_resource_term);
   } catch (const std::exception &e) {
     return fine_error_string(env, "Invalid VDevice resource");
   }
@@ -268,227 +286,341 @@ fine::Term create_pipeline(ErlNifEnv *env, fine::Term network_group_term) {
 }
 
 // NEW Helper function to construct the detailed Erlang map for vstream info
-ERL_NIF_TERM build_detailed_vstream_info_map(ErlNifEnv *env, const hailo_vstream_info_t &vstream_info) {
-    ERL_NIF_TERM map_term = enif_make_new_map(env);
-    uint32_t calculated_frame_size = 0;
+ERL_NIF_TERM
+build_detailed_vstream_info_map(ErlNifEnv *env,
+                                const hailo_vstream_info_t &vstream_info) {
+  ERL_NIF_TERM map_term = enif_make_new_map(env);
+  uint32_t calculated_frame_size = 0;
 
-    // name
-    enif_make_map_put(env, map_term, fine::encode(env, fine::Atom("name")), fine::encode(env, std::string(vstream_info.name)), &map_term);
-    // network_name
-    enif_make_map_put(env, map_term, fine::encode(env, fine::Atom("network_name")), fine::encode(env, std::string(vstream_info.network_name)), &map_term);
-    // direction
-    ERL_NIF_TERM direction_atom_term = (vstream_info.direction == HAILO_D2H_STREAM) ? fine::encode(env, fine::Atom("d2h")) : fine::encode(env, fine::Atom("h2d"));
-    enif_make_map_put(env, map_term, fine::encode(env, fine::Atom("direction")), direction_atom_term, &map_term);
+  // name
+  enif_make_map_put(env, map_term, fine::encode(env, fine::Atom("name")),
+                    fine::encode(env, std::string(vstream_info.name)),
+                    &map_term);
+  // network_name
+  enif_make_map_put(
+      env, map_term, fine::encode(env, fine::Atom("network_name")),
+      fine::encode(env, std::string(vstream_info.network_name)), &map_term);
+  // direction
+  ERL_NIF_TERM direction_atom_term =
+      (vstream_info.direction == HAILO_D2H_STREAM)
+          ? fine::encode(env, fine::Atom("d2h"))
+          : fine::encode(env, fine::Atom("h2d"));
+  enif_make_map_put(env, map_term, fine::encode(env, fine::Atom("direction")),
+                    direction_atom_term, &map_term);
 
-    // Format map
-    ERL_NIF_TERM format_map_erl = enif_make_new_map(env);
-    hailo_format_order_t actual_format_order = vstream_info.format.order;
-    enif_make_map_put(env, format_map_erl, fine::encode(env, fine::Atom("type")), fine::encode(env, format_type_to_atom(vstream_info.format.type)), &format_map_erl);
-    enif_make_map_put(env, format_map_erl, fine::encode(env, fine::Atom("order")), fine::encode(env, format_order_to_atom(actual_format_order)), &format_map_erl);
-    enif_make_map_put(env, format_map_erl, fine::encode(env, fine::Atom("flags")), fine::encode(env, format_flags_to_atom(vstream_info.format.flags)), &format_map_erl);
-    enif_make_map_put(env, map_term, fine::encode(env, fine::Atom("format")), format_map_erl, &map_term);
+  // Format map
+  ERL_NIF_TERM format_map_erl = enif_make_new_map(env);
+  hailo_format_order_t actual_format_order = vstream_info.format.order;
+  enif_make_map_put(
+      env, format_map_erl, fine::encode(env, fine::Atom("type")),
+      fine::encode(env, format_type_to_atom(vstream_info.format.type)),
+      &format_map_erl);
+  enif_make_map_put(
+      env, format_map_erl, fine::encode(env, fine::Atom("order")),
+      fine::encode(env, format_order_to_atom(actual_format_order)),
+      &format_map_erl);
+  enif_make_map_put(
+      env, format_map_erl, fine::encode(env, fine::Atom("flags")),
+      fine::encode(env, format_flags_to_atom(vstream_info.format.flags)),
+      &format_map_erl);
+  enif_make_map_put(env, map_term, fine::encode(env, fine::Atom("format")),
+                    format_map_erl, &map_term);
 
-    bool is_nms = (actual_format_order == HAILO_FORMAT_ORDER_HAILO_NMS ||
-                   actual_format_order == HAILO_FORMAT_ORDER_HAILO_NMS_WITH_BYTE_MASK ||
-                   actual_format_order == HAILO_FORMAT_ORDER_HAILO_NMS_BY_CLASS);
-                   // The placeholder '20' is removed. We rely on the actual enum HAILO_FORMAT_ORDER_HAILO_NMS_BY_CLASS.
-                   // Ensure this enum is correctly defined and valued in your HailoRT headers.
+  bool is_nms =
+      (actual_format_order == HAILO_FORMAT_ORDER_HAILO_NMS ||
+       actual_format_order == HAILO_FORMAT_ORDER_HAILO_NMS_WITH_BYTE_MASK ||
+       actual_format_order == HAILO_FORMAT_ORDER_HAILO_NMS_BY_CLASS);
+  // The placeholder '20' is removed. We rely on the actual enum
+  // HAILO_FORMAT_ORDER_HAILO_NMS_BY_CLASS. Ensure this enum is correctly
+  // defined and valued in your HailoRT headers.
 
-    if (is_nms) {
-        ERL_NIF_TERM nms_shape_map_erl = enif_make_new_map(env);
-        enif_make_map_put(env, nms_shape_map_erl, fine::encode(env, fine::Atom("number_of_classes")), fine::encode(env, static_cast<uint64_t>(vstream_info.nms_shape.number_of_classes)), &nms_shape_map_erl);
+  if (is_nms) {
+    ERL_NIF_TERM nms_shape_map_erl = enif_make_new_map(env);
+    enif_make_map_put(
+        env, nms_shape_map_erl,
+        fine::encode(env, fine::Atom("number_of_classes")),
+        fine::encode(env, static_cast<uint64_t>(
+                              vstream_info.nms_shape.number_of_classes)),
+        &nms_shape_map_erl);
 
-        // Use the union members based on nms_shape.order_type
-        // Exposing both might be simplest if Elixir side can pick
-        enif_make_map_put(env, nms_shape_map_erl, fine::encode(env, fine::Atom("max_bboxes_per_class_or_total")),
-                          (vstream_info.nms_shape.order_type == HAILO_NMS_RESULT_ORDER_BY_SCORE) ?
-                          fine::encode(env, static_cast<uint64_t>(vstream_info.nms_shape.max_bboxes_total)) :
-                          fine::encode(env, static_cast<uint64_t>(vstream_info.nms_shape.max_bboxes_per_class)),
-                          &nms_shape_map_erl);
-        // Also expose order_type itself
-        // You'll need an atom helper for hailo_nms_result_order_type_t
-        // ERL_NIF_TERM nms_order_type_atom = nms_result_order_type_to_atom(env, vstream_info.nms_shape.order_type);
-        // enif_make_map_put(env, nms_shape_map_erl, fine::encode(env, fine::Atom("nms_result_order")), nms_order_type_atom, &nms_shape_map_erl);
+    // Use the union members based on nms_shape.order_type
+    // Exposing both might be simplest if Elixir side can pick
+    enif_make_map_put(
+        env, nms_shape_map_erl,
+        fine::encode(env, fine::Atom("max_bboxes_per_class_or_total")),
+        (vstream_info.nms_shape.order_type == HAILO_NMS_RESULT_ORDER_BY_SCORE)
+            ? fine::encode(env, static_cast<uint64_t>(
+                                    vstream_info.nms_shape.max_bboxes_total))
+            : fine::encode(env,
+                           static_cast<uint64_t>(
+                               vstream_info.nms_shape.max_bboxes_per_class)),
+        &nms_shape_map_erl);
+    // Also expose order_type itself
+    // You'll need an atom helper for hailo_nms_result_order_type_t
+    // ERL_NIF_TERM nms_order_type_atom = nms_result_order_type_to_atom(env,
+    // vstream_info.nms_shape.order_type); enif_make_map_put(env,
+    // nms_shape_map_erl, fine::encode(env, fine::Atom("nms_result_order")),
+    // nms_order_type_atom, &nms_shape_map_erl);
 
+    enif_make_map_put(env, map_term, fine::encode(env, fine::Atom("nms_shape")),
+                      nms_shape_map_erl, &map_term);
+    enif_make_map_put(env, map_term, fine::encode(env, fine::Atom("shape")),
+                      fine::encode(env, fine::Atom("nil")), &map_term);
 
-        enif_make_map_put(env, map_term, fine::encode(env, fine::Atom("nms_shape")), nms_shape_map_erl, &map_term);
-        enif_make_map_put(env, map_term, fine::encode(env, fine::Atom("shape")), fine::encode(env, fine::Atom("nil")), &map_term);
-
-        // Calculate frame_size for NMS stream
-        uint32_t num_detections_for_size_calc = 0;
-        if (vstream_info.nms_shape.order_type == HAILO_NMS_RESULT_ORDER_BY_CLASS ||
-            vstream_info.nms_shape.order_type == HAILO_NMS_RESULT_ORDER_HW) {
-            num_detections_for_size_calc = vstream_info.nms_shape.number_of_classes * vstream_info.nms_shape.max_bboxes_per_class;
-        } else if (vstream_info.nms_shape.order_type == HAILO_NMS_RESULT_ORDER_BY_SCORE) {
-            num_detections_for_size_calc = vstream_info.nms_shape.max_bboxes_total;
-        } else {
-            // Default or error: if nms_shape.order_type is unknown, use max_bboxes_per_class as a common case.
-            num_detections_for_size_calc = vstream_info.nms_shape.number_of_classes * vstream_info.nms_shape.max_bboxes_per_class;
-        }
-
-        // This structure (6 floats: ymin, xmin, ymax, xmax, confidence, class_id) is common for YOLO NMS outputs.
-        // Verify this against your specific model's NMS configuration.
-        uint32_t elements_per_detection = 6;
-
-        if (vstream_info.format.type == HAILO_FORMAT_TYPE_FLOAT32) {
-            calculated_frame_size = num_detections_for_size_calc * elements_per_detection * sizeof(float);
-        } else if (vstream_info.format.type == HAILO_FORMAT_TYPE_UINT8) { // Example if NMS output could be uint8
-            calculated_frame_size = num_detections_for_size_calc * elements_per_detection * sizeof(uint8_t);
-        } else {
-            // Fallback for other types or if type is HAILO_FORMAT_TYPE_AUTO and not resolved
-            calculated_frame_size = 0;
-        }
-
-    } else { // Not NMS
-        ERL_NIF_TERM shape_map_erl = enif_make_new_map(env);
-        enif_make_map_put(env, shape_map_erl, fine::encode(env, fine::Atom("height")), fine::encode(env, static_cast<uint64_t>(vstream_info.shape.height)), &shape_map_erl);
-        enif_make_map_put(env, shape_map_erl, fine::encode(env, fine::Atom("width")), fine::encode(env, static_cast<uint64_t>(vstream_info.shape.width)), &shape_map_erl);
-        enif_make_map_put(env, shape_map_erl, fine::encode(env, fine::Atom("features")), fine::encode(env, static_cast<uint64_t>(vstream_info.shape.features)), &shape_map_erl);
-        enif_make_map_put(env, map_term, fine::encode(env, fine::Atom("shape")), shape_map_erl, &map_term);
-        enif_make_map_put(env, map_term, fine::encode(env, fine::Atom("nms_shape")), fine::encode(env, fine::Atom("nil")), &map_term);
-
-        calculated_frame_size = hailort::HailoRTCommon::get_frame_size(vstream_info.shape, vstream_info.format);
-    }
-
-    // frame_size
-    enif_make_map_put(env, map_term, fine::encode(env, fine::Atom("frame_size")), fine::encode(env, static_cast<uint64_t>(calculated_frame_size)), &map_term);
-
-    // Optional quant_info map
-    ERL_NIF_TERM quant_info_map_erl = enif_make_new_map(env);
-    enif_make_map_put(env, quant_info_map_erl, fine::encode(env, fine::Atom("qp_zp")), fine::encode(env, static_cast<double>(vstream_info.quant_info.qp_zp)), &quant_info_map_erl);
-    enif_make_map_put(env, quant_info_map_erl, fine::encode(env, fine::Atom("qp_scale")), fine::encode(env, static_cast<double>(vstream_info.quant_info.qp_scale)), &quant_info_map_erl);
-    if (vstream_info.quant_info.qp_zp != 0.0f || vstream_info.quant_info.qp_scale != 0.0f) {
-         enif_make_map_put(env, map_term, fine::encode(env, fine::Atom("quant_info")), quant_info_map_erl, &map_term);
+    // Calculate frame_size for NMS stream
+    uint32_t num_detections_for_size_calc = 0;
+    if (vstream_info.nms_shape.order_type == HAILO_NMS_RESULT_ORDER_BY_CLASS ||
+        vstream_info.nms_shape.order_type == HAILO_NMS_RESULT_ORDER_HW) {
+      num_detections_for_size_calc =
+          vstream_info.nms_shape.number_of_classes *
+          vstream_info.nms_shape.max_bboxes_per_class;
+    } else if (vstream_info.nms_shape.order_type ==
+               HAILO_NMS_RESULT_ORDER_BY_SCORE) {
+      num_detections_for_size_calc = vstream_info.nms_shape.max_bboxes_total;
     } else {
-         enif_make_map_put(env, map_term, fine::encode(env, fine::Atom("quant_info")), fine::encode(env, fine::Atom("nil")), &map_term);
+      // Default or error: if nms_shape.order_type is unknown, use
+      // max_bboxes_per_class as a common case.
+      num_detections_for_size_calc =
+          vstream_info.nms_shape.number_of_classes *
+          vstream_info.nms_shape.max_bboxes_per_class;
     }
 
-    return map_term;
+    // This structure (6 floats: ymin, xmin, ymax, xmax, confidence, class_id)
+    // is common for YOLO NMS outputs. Verify this against your specific model's
+    // NMS configuration.
+    uint32_t elements_per_detection = 6;
+
+    if (vstream_info.format.type == HAILO_FORMAT_TYPE_FLOAT32) {
+      calculated_frame_size =
+          num_detections_for_size_calc * elements_per_detection * sizeof(float);
+    } else if (vstream_info.format.type ==
+               HAILO_FORMAT_TYPE_UINT8) { // Example if NMS output could be
+                                          // uint8
+      calculated_frame_size = num_detections_for_size_calc *
+                              elements_per_detection * sizeof(uint8_t);
+    } else {
+      // Fallback for other types or if type is HAILO_FORMAT_TYPE_AUTO and not
+      // resolved
+      calculated_frame_size = 0;
+    }
+
+  } else { // Not NMS
+    ERL_NIF_TERM shape_map_erl = enif_make_new_map(env);
+    enif_make_map_put(
+        env, shape_map_erl, fine::encode(env, fine::Atom("height")),
+        fine::encode(env, static_cast<uint64_t>(vstream_info.shape.height)),
+        &shape_map_erl);
+    enif_make_map_put(
+        env, shape_map_erl, fine::encode(env, fine::Atom("width")),
+        fine::encode(env, static_cast<uint64_t>(vstream_info.shape.width)),
+        &shape_map_erl);
+    enif_make_map_put(
+        env, shape_map_erl, fine::encode(env, fine::Atom("features")),
+        fine::encode(env, static_cast<uint64_t>(vstream_info.shape.features)),
+        &shape_map_erl);
+    enif_make_map_put(env, map_term, fine::encode(env, fine::Atom("shape")),
+                      shape_map_erl, &map_term);
+    enif_make_map_put(env, map_term, fine::encode(env, fine::Atom("nms_shape")),
+                      fine::encode(env, fine::Atom("nil")), &map_term);
+
+    calculated_frame_size = hailort::HailoRTCommon::get_frame_size(
+        vstream_info.shape, vstream_info.format);
+  }
+
+  // frame_size
+  enif_make_map_put(
+      env, map_term, fine::encode(env, fine::Atom("frame_size")),
+      fine::encode(env, static_cast<uint64_t>(calculated_frame_size)),
+      &map_term);
+
+  // Optional quant_info map
+  ERL_NIF_TERM quant_info_map_erl = enif_make_new_map(env);
+  enif_make_map_put(
+      env, quant_info_map_erl, fine::encode(env, fine::Atom("qp_zp")),
+      fine::encode(env, static_cast<double>(vstream_info.quant_info.qp_zp)),
+      &quant_info_map_erl);
+  enif_make_map_put(
+      env, quant_info_map_erl, fine::encode(env, fine::Atom("qp_scale")),
+      fine::encode(env, static_cast<double>(vstream_info.quant_info.qp_scale)),
+      &quant_info_map_erl);
+  if (vstream_info.quant_info.qp_zp != 0.0f ||
+      vstream_info.quant_info.qp_scale != 0.0f) {
+    enif_make_map_put(env, map_term,
+                      fine::encode(env, fine::Atom("quant_info")),
+                      quant_info_map_erl, &map_term);
+  } else {
+    enif_make_map_put(env, map_term,
+                      fine::encode(env, fine::Atom("quant_info")),
+                      fine::encode(env, fine::Atom("nil")), &map_term);
+  }
+
+  return map_term;
 }
 
 // NIF function to get information about input vstreams from a NetworkGroup
-fine::Term get_input_vstream_infos_from_ng(ErlNifEnv *env, fine::Term network_group_term) {
+fine::Term get_input_vstream_infos_from_ng(ErlNifEnv *env,
+                                           fine::Term network_group_term) {
   fine::ResourcePtr<NetworkGroupResource> ng_res;
   try {
-    ng_res = fine::decode<fine::ResourcePtr<NetworkGroupResource>>(env, network_group_term);
+    ng_res = fine::decode<fine::ResourcePtr<NetworkGroupResource>>(
+        env, network_group_term);
   } catch (const std::exception &e) {
-    return fine_error_string(env, "Invalid network group resource for getting input vstream infos");
+    return fine_error_string(
+        env, "Invalid network group resource for getting input vstream infos");
   }
 
-  auto vstream_infos_expected = ng_res->network_group->get_input_vstream_infos();
+  auto vstream_infos_expected =
+      ng_res->network_group->get_input_vstream_infos();
   if (!vstream_infos_expected) {
-      return fine_error_string(env, "Failed to get input vstream infos from network group: " + std::to_string(vstream_infos_expected.status()));
+    return fine_error_string(
+        env, "Failed to get input vstream infos from network group: " +
+                 std::to_string(vstream_infos_expected.status()));
   }
 
   std::vector<ERL_NIF_TERM> map_terms_vector;
   for (const auto &info : vstream_infos_expected.value()) {
     map_terms_vector.push_back(build_detailed_vstream_info_map(env, info));
   }
-  ERL_NIF_TERM list_of_maps_term = enif_make_list_from_array(env, map_terms_vector.data(), map_terms_vector.size());
+  ERL_NIF_TERM list_of_maps_term = enif_make_list_from_array(
+      env, map_terms_vector.data(), map_terms_vector.size());
   return fine_ok(env, fine::Term(list_of_maps_term));
 }
 
 // NIF function to get information about output vstreams from a NetworkGroup
-fine::Term get_output_vstream_infos_from_ng(ErlNifEnv *env, fine::Term network_group_term) {
+fine::Term get_output_vstream_infos_from_ng(ErlNifEnv *env,
+                                            fine::Term network_group_term) {
   fine::ResourcePtr<NetworkGroupResource> ng_res;
   try {
-    ng_res = fine::decode<fine::ResourcePtr<NetworkGroupResource>>(env, network_group_term);
+    ng_res = fine::decode<fine::ResourcePtr<NetworkGroupResource>>(
+        env, network_group_term);
   } catch (const std::exception &e) {
-    return fine_error_string(env, "Invalid network group resource for getting output vstream infos");
+    return fine_error_string(
+        env, "Invalid network group resource for getting output vstream infos");
   }
 
-  auto vstream_infos_expected = ng_res->network_group->get_output_vstream_infos();
+  auto vstream_infos_expected =
+      ng_res->network_group->get_output_vstream_infos();
   if (!vstream_infos_expected) {
-      return fine_error_string(env, "Failed to get output vstream infos from network group: " + std::to_string(vstream_infos_expected.status()));
+    return fine_error_string(
+        env, "Failed to get output vstream infos from network group: " +
+                 std::to_string(vstream_infos_expected.status()));
   }
 
   std::vector<ERL_NIF_TERM> map_terms_vector;
   for (const auto &info : vstream_infos_expected.value()) {
     map_terms_vector.push_back(build_detailed_vstream_info_map(env, info));
   }
-  ERL_NIF_TERM list_of_maps_term = enif_make_list_from_array(env, map_terms_vector.data(), map_terms_vector.size());
+  ERL_NIF_TERM list_of_maps_term = enif_make_list_from_array(
+      env, map_terms_vector.data(), map_terms_vector.size());
   return fine_ok(env, fine::Term(list_of_maps_term));
 }
 
 // NIF function to get information about input vstreams from a pipeline
-fine::Term get_input_vstream_infos_from_pipeline(ErlNifEnv *env, fine::Term pipeline_term) {
-    fine::ResourcePtr<InferPipelineResource> pipeline_res;
-    try {
-        pipeline_res = fine::decode<fine::ResourcePtr<InferPipelineResource>>(env, pipeline_term);
-    } catch (const std::exception &e) {
-        return fine_error_string(env, "Invalid pipeline resource for getting input vstream infos");
-    }
-
-    // Get all vstream_infos from the underlying network group
-    auto all_ng_input_infos_expected = pipeline_res->network_group->get_input_vstream_infos();
-    if (!all_ng_input_infos_expected) {
-        return fine_error_string(env, "Failed to get input vstream infos from network group for pipeline: " + std::to_string(all_ng_input_infos_expected.status()));
-    }
-    const auto& all_ng_input_infos = all_ng_input_infos_expected.value();
-
-    auto active_pipeline_input_vstreams = pipeline_res->pipeline->get_input_vstreams();
-    std::vector<ERL_NIF_TERM> map_terms_vector;
-
-    for (const auto &active_vstream_ref : active_pipeline_input_vstreams) {
-        std::string active_name = active_vstream_ref.get().name();
-        bool found = false;
-        for (const auto &info_t : all_ng_input_infos) {
-            if (std::string(info_t.name) == active_name) {
-                map_terms_vector.push_back(build_detailed_vstream_info_map(env, info_t));
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-            // This case should ideally not happen if pipeline streams are a subset of NG streams
-            // Or handle it by creating a minimal map if possible, or error out
-            // For now, let's skip if not found, or add a placeholder error map entry
-             ERL_NIF_TERM error_map = enif_make_new_map(env);
-             enif_make_map_put(env, error_map, fine::encode(env, fine::Atom("error")), fine::encode(env, "Info not found for active stream: " + active_name), &error_map);
-             map_terms_vector.push_back(error_map);
-        }
-    }
-    ERL_NIF_TERM list_of_maps_term = enif_make_list_from_array(env, map_terms_vector.data(), map_terms_vector.size());
-
-    return fine_ok(env, fine::Term(list_of_maps_term));
-}
-
-// NIF function to get information about output vstreams
-fine::Term get_output_vstream_infos_from_pipeline(ErlNifEnv *env, fine::Term pipeline_term) {
+fine::Term get_input_vstream_infos_from_pipeline(ErlNifEnv *env,
+                                                 fine::Term pipeline_term) {
   fine::ResourcePtr<InferPipelineResource> pipeline_res;
   try {
-    pipeline_res = fine::decode<fine::ResourcePtr<InferPipelineResource>>(env, pipeline_term);
+    pipeline_res = fine::decode<fine::ResourcePtr<InferPipelineResource>>(
+        env, pipeline_term);
   } catch (const std::exception &e) {
-    return fine_error_string(env, "Invalid pipeline resource for getting output vstream infos");
+    return fine_error_string(
+        env, "Invalid pipeline resource for getting input vstream infos");
   }
 
   // Get all vstream_infos from the underlying network group
-    auto all_ng_output_infos_expected = pipeline_res->network_group->get_output_vstream_infos();
-    if (!all_ng_output_infos_expected) {
-        return fine_error_string(env, "Failed to get output vstream infos from network group for pipeline: " + std::to_string(all_ng_output_infos_expected.status()));
-    }
-    const auto& all_ng_output_infos = all_ng_output_infos_expected.value();
+  auto all_ng_input_infos_expected =
+      pipeline_res->network_group->get_input_vstream_infos();
+  if (!all_ng_input_infos_expected) {
+    return fine_error_string(
+        env,
+        "Failed to get input vstream infos from network group for pipeline: " +
+            std::to_string(all_ng_input_infos_expected.status()));
+  }
+  const auto &all_ng_input_infos = all_ng_input_infos_expected.value();
 
-  auto active_pipeline_output_vstreams = pipeline_res->pipeline->get_output_vstreams();
+  auto active_pipeline_input_vstreams =
+      pipeline_res->pipeline->get_input_vstreams();
+  std::vector<ERL_NIF_TERM> map_terms_vector;
+
+  for (const auto &active_vstream_ref : active_pipeline_input_vstreams) {
+    std::string active_name = active_vstream_ref.get().name();
+    bool found = false;
+    for (const auto &info_t : all_ng_input_infos) {
+      if (std::string(info_t.name) == active_name) {
+        map_terms_vector.push_back(
+            build_detailed_vstream_info_map(env, info_t));
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      // This case should ideally not happen if pipeline streams are a subset of
+      // NG streams Or handle it by creating a minimal map if possible, or error
+      // out For now, let's skip if not found, or add a placeholder error map
+      // entry
+      ERL_NIF_TERM error_map = enif_make_new_map(env);
+      enif_make_map_put(
+          env, error_map, fine::encode(env, fine::Atom("error")),
+          fine::encode(env, "Info not found for active stream: " + active_name),
+          &error_map);
+      map_terms_vector.push_back(error_map);
+    }
+  }
+  ERL_NIF_TERM list_of_maps_term = enif_make_list_from_array(
+      env, map_terms_vector.data(), map_terms_vector.size());
+
+  return fine_ok(env, fine::Term(list_of_maps_term));
+}
+
+// NIF function to get information about output vstreams
+fine::Term get_output_vstream_infos_from_pipeline(ErlNifEnv *env,
+                                                  fine::Term pipeline_term) {
+  fine::ResourcePtr<InferPipelineResource> pipeline_res;
+  try {
+    pipeline_res = fine::decode<fine::ResourcePtr<InferPipelineResource>>(
+        env, pipeline_term);
+  } catch (const std::exception &e) {
+    return fine_error_string(
+        env, "Invalid pipeline resource for getting output vstream infos");
+  }
+
+  // Get all vstream_infos from the underlying network group
+  auto all_ng_output_infos_expected =
+      pipeline_res->network_group->get_output_vstream_infos();
+  if (!all_ng_output_infos_expected) {
+    return fine_error_string(
+        env,
+        "Failed to get output vstream infos from network group for pipeline: " +
+            std::to_string(all_ng_output_infos_expected.status()));
+  }
+  const auto &all_ng_output_infos = all_ng_output_infos_expected.value();
+
+  auto active_pipeline_output_vstreams =
+      pipeline_res->pipeline->get_output_vstreams();
   std::vector<ERL_NIF_TERM> map_terms_vector;
 
   for (const auto &active_vstream_ref : active_pipeline_output_vstreams) {
-        std::string active_name = active_vstream_ref.get().name();
-        bool found = false;
-        for (const auto &info_t : all_ng_output_infos) {
-            if (std::string(info_t.name) == active_name) {
-                map_terms_vector.push_back(build_detailed_vstream_info_map(env, info_t));
-                found = true;
-                break;
-            }
-        }
-        if (!found) {
-             ERL_NIF_TERM error_map = enif_make_new_map(env);
-             enif_make_map_put(env, error_map, fine::encode(env, fine::Atom("error")), fine::encode(env, "Info not found for active stream: " + active_name), &error_map);
-             map_terms_vector.push_back(error_map);
-        }
+    std::string active_name = active_vstream_ref.get().name();
+    bool found = false;
+    for (const auto &info_t : all_ng_output_infos) {
+      if (std::string(info_t.name) == active_name) {
+        map_terms_vector.push_back(
+            build_detailed_vstream_info_map(env, info_t));
+        found = true;
+        break;
+      }
     }
-  ERL_NIF_TERM list_of_maps_term = enif_make_list_from_array(env, map_terms_vector.data(), map_terms_vector.size());
+    if (!found) {
+      ERL_NIF_TERM error_map = enif_make_new_map(env);
+      enif_make_map_put(
+          env, error_map, fine::encode(env, fine::Atom("error")),
+          fine::encode(env, "Info not found for active stream: " + active_name),
+          &error_map);
+      map_terms_vector.push_back(error_map);
+    }
+  }
+  ERL_NIF_TERM list_of_maps_term = enif_make_list_from_array(
+      env, map_terms_vector.data(), map_terms_vector.size());
   return fine_ok(env, fine::Term(list_of_maps_term));
 }
 
@@ -505,10 +637,10 @@ fine::Term infer(ErlNifEnv *env, fine::Term pipeline_term,
   }
 
   // Get the input data map from the input term
-  std::map<std::string, ERL_NIF_TERM> input_map;
+  std::map<std::string, std::string> input_map;
   try {
     input_map =
-        fine::decode<std::map<std::string, ERL_NIF_TERM>>(env, input_data_term);
+        fine::decode<std::map<std::string, std::string>>(env, input_data_term);
   } catch (const std::exception &e) {
     return fine_error_string(env, "Input data must be a map");
   }
@@ -528,20 +660,18 @@ fine::Term infer(ErlNifEnv *env, fine::Term pipeline_term,
     if (it == input_map.end()) {
       return fine_error_string(env, "Missing input data for vstream: " + name);
     }
-    ErlNifBinary binary;
-    if (!enif_inspect_binary(env, it->second, &binary)) {
-      return fine_error_string(env, "Input data for vstream " + name +
-                                        " must be a binary");
-    }
+    std::string &binary = it->second;
     size_t expected_size = input_vstream.get().get_frame_size() * frames_count;
-    if (binary.size != expected_size) {
+    if (binary.size() != expected_size) {
       return fine_error_string(
           env, "Invalid input data size for vstream " + name +
                    ". Expected: " + std::to_string(expected_size) +
-                   ", Got: " + std::to_string(binary.size));
+                   ", Got: " + std::to_string(binary.size()));
     }
-    input_data_mem_views.emplace(name,
-                                 hailort::MemoryView(binary.data, binary.size));
+    input_data_mem_views.emplace(
+        name, hailort::MemoryView(
+                  const_cast<void *>(static_cast<const void *>(binary.data())),
+                  binary.size()));
   }
 
   // Prepare output data map and memory views
@@ -569,8 +699,11 @@ fine::Term infer(ErlNifEnv *env, fine::Term pipeline_term,
   for (const auto &output_vstream : output_vstreams) {
     std::string name = output_vstream.get().name();
     const auto &output_buffer = output_data[name];
-    output_map[name] = std::string(reinterpret_cast<const char *>(output_buffer.data()), output_buffer.size());
+    output_map[name] =
+        std::string(reinterpret_cast<const char *>(output_buffer.data()),
+                    output_buffer.size());
   }
+
   return fine_ok(env, output_map);
 }
 

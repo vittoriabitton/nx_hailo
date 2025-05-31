@@ -1,0 +1,174 @@
+# Hailo Classification Example
+
+```elixir
+Mix.install([
+  {:nx_hailo, github: "vittoriabitton/nx-with-hailo", sparse: "nx_hailo"},
+  {:image, "~> 0.54.4"},
+  {:kino, "~> 0.14.0"}
+],[
+  config: [
+    nx: [default_backend: EXLA.Backend],
+  ],
+  system_env: %{
+    "XLA_TARGET_PLATFORM"=> "aarch64-linux-gnu"
+  }
+])
+```
+
+## Section
+
+```elixir
+priv = to_string(:code.priv_dir(:nx_hailo))
+
+%{shape: {input_h, input_w, _channels}} = input_image =
+  # Evision.imread("#{priv}/test_image.jpg")
+  Evision.imread("#{priv}/umbrella2.png")
+```
+
+```elixir
+{:ok, hailo_model} = NxHailo.Hailo.load("#{priv}/yolov8m.hef")
+```
+
+```elixir
+ evision_resize_and_pad = fn image, {h, w}, {target_h, target_h} = target_shape ->
+   # target_h and target_w should be the same for yolov8
+  size = max(h, w)
+  pad_h = div(size - h, 2)
+  pad_w = div(size - w, 2)
+
+  pad_h_extra = rem(size - h, 2)
+  pad_w_extra = rem(size - w, 2)
+
+  # pad to a square
+  padded = Evision.copyMakeBorder(
+    image,
+    pad_h,
+    pad_h + pad_h_extra,
+    pad_w,
+    pad_w + pad_w_extra,
+    Evision.Constant.cv_BORDER_CONSTANT(),
+    value: {114, 114, 114}
+  )
+
+   Evision.resize(padded, target_shape)
+end
+```
+
+```elixir
+input_shape = {input_h, input_w}
+padded_shape = {640, 640}
+
+padded_image = evision_resize_and_pad.(input_image, input_shape, padded_shape)
+```
+
+```elixir
+[%{name: name, shape: model_shape}] = hailo_model.pipeline.input_vstream_infos
+[%{name: output_key}] = hailo_model.pipeline.output_vstream_infos
+
+%{type: {:u, 8}} =
+  input_tensor =
+  padded_image
+  |> Evision.Mat.to_nx()
+  |> Nx.backend_transfer()
+
+classes =
+  File.read!("#{priv}/yolov8m_classes.json")
+  |> Jason.decode!()
+  |> Enum.with_index()
+  |> Map.new(fn {v, k} -> {k, v} end)
+```
+
+```elixir
+{:ok, raw_detected_objects} =
+  NxHailo.Hailo.infer(
+    hailo_model,
+    %{name => input_tensor},
+    NxHailo.Parsers.YoloV8,
+    classes: classes,
+    key: output_key
+  )
+```
+
+```elixir
+detected_objects =
+  raw_detected_objects
+  |> Enum.reject(& &1.score < 0.5)
+  |> NxHailo.Parsers.YoloV8.postprocess(input_shape)
+```
+
+```elixir
+defmodule YOLODraw do
+  @font_size 18
+  @stroke_width 3
+  def draw_detected_objects(mat, detected_objects, fps_label) do
+    {:ok, image} = Image.from_evision(mat)
+    {full_width, full_height, _} = Image.shape(image)
+
+    fps_image =
+      Image.Text.simple_text!(fps_label, text_fill_color: "white", font_size: 21)
+      |> Image.Text.add_background_padding!(background_fill_color: "#0000FF", padding: [5, 5])
+      |> Image.Text.add_background!(background_fill_color: "#0000FF")
+      |> Image.split_alpha()
+      |> elem(0)
+    {fps_width, fps_height, _} = Image.shape(fps_image)
+
+    detected_objects
+    |> Enum.reduce(image, fn %NxHailo.Parsers.YoloV8.DetectedObject{} = obj, image ->
+      left = obj.xmin
+      top = obj.ymin
+
+      dbg({left, top})
+
+      width = obj.xmax - obj.xmin
+      height = obj.ymax - obj.ymin
+
+      prob = round(obj.score * 100)
+      color = class_color(obj.class_id)
+
+      text_image =
+        Image.Text.simple_text!("#{obj.class_name} #{prob}%", text_fill_color: "white", font_size: @font_size)
+        |> Image.Text.add_background_padding!(background_fill_color: "black", padding: [5, 5])
+        |> Image.Text.add_background!(background_fill_color: "black")
+        |> Image.split_alpha()
+        |> elem(0)
+
+      {_, text_height, _} = Image.shape(text_image)
+
+      image
+      |> Image.Draw.rect!(left, top, width, height,[
+        stroke_width: @stroke_width, color: color, fill: false
+      ])
+      |> Image.Draw.image!(text_image, left, max(top - text_height - 2, 0))
+    end)
+    |> Image.Draw.image!(fps_image, full_width - fps_width, full_height - fps_height)
+  end
+
+  @class_colors  [
+    "#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF", "#00FFFF",
+    "#800000", "#008000", "#000080", "#FF00FF", "#800080", "#008080",
+    "#C0C0C0", "#FFA500", "#A52A2A", "#8A2BE2", "#5F9EA0", "#7FFF00",
+    "#D2691E", "#FF7F50", "#6495ED", "#DC143C", "#00FFFF", "#00008B",
+    "#008B8B", "#B8860B", "#A9A9A9", "#006400", "#BDB76B", "#8B008B",
+    "#556B2F", "#FF8C00", "#9932CC", "#8B0000", "#E9967A", "#8FBC8F",
+    "#483D8B", "#2F4F4F", "#00CED1", "#9400D3", "#FF1493", "#00BFFF",
+    "#696969", "#1E90FF", "#B22222", "#FFFAF0", "#228B22", "#FF00FF",
+    "#DCDCDC", "#F8F8FF", "#FFD700", "#DAA520", "#808080", "#ADFF2F",
+    "#F0FFF0", "#FF69B4", "#CD5C5C", "#4B0082", "#FFFFF0", "#F0E68C",
+    "#E6E6FA", "#FFF0F5", "#7CFC00", "#FFFACD", "#ADD8E6", "#F08080",
+    "#E0FFFF", "#FAFAD2", "#D3D3D3", "#90EE90", "#FFB6C1", "#FFA07A",
+    "#20B2AA", "#87CEFA", "#778899", "#B0C4DE", "#FFFFE0", "#00FF7F",
+    "#4682B4", "#D2B48C", "#008080", "#D8BFD8", "#FF6347", "#40E0D0",
+    "#EE82EE", "#F5DEB3", "#FFFFFF", "#F5F5F5"
+  ]
+  |> Enum.with_index(&{&2, &1})
+  |> Map.new()
+
+  def class_color(class_idx) do
+    Map.get(@class_colors, class_idx, "#FF0000")
+  end
+end
+```
+
+```elixir
+YOLODraw.draw_detected_objects(input_image, detected_objects, "FPS LABEL")
+```

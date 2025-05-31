@@ -23,6 +23,8 @@ erl_crash.dump
 
 /priv/*.json
 /priv/*.hef
+hailort.log
+/priv/*.marker
 .envrc
 .env
 .libhailo
