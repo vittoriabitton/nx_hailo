@@ -1,6 +1,6 @@
 # NxHailo
 
-## Building via Ubuntu on UTM (macOS)
+## Building (macOS via Ubuntu on UTM or Docker)
 
 - Install elixir and erlang
 - Setup github SSH keys
@@ -20,6 +20,15 @@ export EVISION_PREFER_PRECOMPILED=false
   - `make hailort`
   - `make hailort-drivers`
   - `make all`
+
+If compiling with Docker, after these commands, you must copy the libhailort.so and libhailort.so.4.20 files from the container's /home/nerves/project/target/usr/lib:
+
+```shell
+mkdir -p .libhailo
+docker cp <container_name_or_id>:/target/usr/lib/libhailort.so .libhailo
+docker cp <container_name_or_id>:/target/usr/lib/libhailort.so.4.20.0 .libhailo
+export HAILO_LIB_DIR=.libhailo
+```
 
 - The SD card must either be:
   - read via an USB reader and mounted to UTM; OR
