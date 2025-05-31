@@ -27,3 +27,4 @@ erl_crash.dump
 /priv/*.onnx
 hailort.log
 /priv/*.marker
+.libhailo
