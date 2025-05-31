@@ -5,7 +5,6 @@
 #include <string>
 #include <vector>
 #include <erl_nif.h>
-#include <iostream>
 
 // Resource type for VDevice
 struct VDeviceResource {
@@ -552,38 +551,6 @@ fine::Term infer(ErlNifEnv *env, fine::Term pipeline_term,
     output_data_mem_views.emplace(
         name, hailort::MemoryView(output_buffer.data(), output_buffer.size()));
   }
-
-  // Validate input data before inference
-for (const auto &pair : input_data_mem_views) {
-    printf("DEBUG: Input '%s': ptr=%p, size=%zu\n",
-           pair.first.c_str(), pair.second.data(), pair.second.size());
-
-    // Check if pointer is valid
-    if (pair.second.data() == nullptr) {
-        printf("ERROR: Null pointer for input '%s'\n", pair.first.c_str());
-        return fine_error_string(env, "Null input data for: " + pair.first);
-    }
-
-    // Check if size is reasonable
-    if (pair.second.size() == 0) {
-        printf("ERROR: Zero size for input '%s'\n", pair.first.c_str());
-        return fine_error_string(env, "Zero size input data for: " + pair.first);
-    }
-}
-
-// Validate output data
-for (const auto &pair : output_data_mem_views) {
-    printf("DEBUG: Output '%s': ptr=%p, size=%zu\n",
-           pair.first.c_str(), pair.second.data(), pair.second.size());
-}
-
-// In your C++ code, print the actual NMS shape info:
-auto output_vstream_info = output_vstreams[0].get().get_info();
-std::cout << "NMS Shape Info:" << std::endl;
-std::cout << "  number_of_classes: " << output_vstream_info.nms_shape.number_of_classes << std::endl;
-std::cout << "  max_bboxes_per_class: " << output_vstream_info.nms_shape.max_bboxes_per_class << std::endl;
-std::cout << "  max_bboxes_total: " << output_vstream_info.nms_shape.max_bboxes_total << std::endl;
-std::cout << "Format order: " << output_vstream_info.format.order << std::endl;
 
   // Run inference
   hailo_status status = pipeline_res->pipeline->infer(

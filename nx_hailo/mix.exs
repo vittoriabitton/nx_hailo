@@ -130,7 +130,7 @@ defmodule NxHailo.MixProject do
         "esbuild nx_hailo --minify",
         "phx.digest"
       ],
-      "compile.download_models": [&download_yolov8_model/1, &download_resnet_model/1]
+      "compile.download_models": [&download_yolov8_model/1]
     ]
   end
 
@@ -153,17 +153,6 @@ defmodule NxHailo.MixProject do
     download_dataset_to_json_file(dataset_yml, Path.join(priv, "yolov8m_classes.json"))
     download_model(model_hef_url, Path.join(priv, "yolov8m.hef"))
     download_model(model_zip_url, Path.join(priv, "yolov8m.zip"))
-  end
-
-  defp download_resnet_model(_args) do
-    model_hef_url =
-      "https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/v2.15.0/hailo8l/resnet_v1_50.hef"
-
-    priv = Path.join(__DIR__, "priv")
-
-    File.mkdir_p!(priv)
-
-    download_model(model_hef_url, Path.join(priv, "resnet50.hef"))
   end
 
   defp download_dataset_to_json_file(url, filename) do
