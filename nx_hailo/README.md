@@ -1,5 +1,16 @@
 # NxHailo
 
+## Installing in your project
+
+If installing as a Git dependency, you should make sure that the `:sparse` option
+is used:
+
+```elixir
+[
+  {:nx_hailo, github: "vittoriabitton/nx_hailo", sparse: "nx_hailo"}
+]
+```
+
 ## Building (macOS via Ubuntu on UTM or Docker)
 
 - Install elixir and erlang
