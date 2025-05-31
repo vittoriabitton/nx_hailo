@@ -8,130 +8,100 @@ defmodule NxHailo.Hailo do
   For a more user-friendly, higher-level API, see the main `NxHailo` module.
   """
 
-  alias NxHailo.NIF
-  # We refer to the main NxHailo module for the new top-level API if needed.
-  # alias NxHailo # This line is only needed if calling functions from the main NxHailo module.
+  alias NxHailo.Hailo.Model
+  alias NxHailo.Hailo.API
 
   @doc """
-  Loads a network from a Hailo Executable Format (HEF) file.
+  Loads a Hailo model from a HEF file and prepares it for inference.
 
-  Returns a network group resource reference that can be used to create inference pipelines.
-  This is a lower-level function directly interacting with NIFs.
+  This function handles VDevice creation, network configuration, and pipeline setup.
 
-  ## Parameters
+  Parameters:
+    - `hef_path`: The path to the .hef model file.
+    - `model_name` (optional): A name to associate with the loaded model.
 
-  - `hef_path` - Path to the HEF file
-
-  ## Examples
-
-      {:ok, network_group} = NxHailo.Hailo.load_network("model.hef")
+  Returns `{:ok, %NxHailo.Model{}}` or `{:error, reason}`.
   """
-  @spec load_network(String.t()) :: {:ok, reference()} | {:error, String.t()}
-  def load_network(hef_path) when is_binary(hef_path) do
-    case NIF.load_network_group(hef_path) do
-      {:error, reason} -> {:error, reason}
-      network_group -> {:ok, network_group}
+  def load(hef_path) when is_binary(hef_path) do
+    with {:ok, vdevice} <- API.create_vdevice(),
+         {:ok, ng} <- API.configure_network_group(vdevice, hef_path),
+         {:ok, pipeline_struct} <- API.create_pipeline(ng) do
+      model = %NxHailo.Hailo.Model{
+        pipeline: pipeline_struct,
+        name: Path.basename(hef_path)
+      }
+
+      {:ok, model}
     end
   end
 
   @doc """
-  Creates an inference pipeline from a network group.
-  This is a lower-level function directly interacting with NIFs.
+  Runs inference on a previously loaded Hailo model.
 
-  ## Parameters
+  Parameters:
+    - `model`: The `%NxHailo.Model{}` struct obtained from `load/1`.
+    - `inputs`: A map where keys correspond to the input vstream names, and the values are `Nx.Tensor`s.
+      Example: `%{ "input_layer_name" => #Nx.Tensor<...> }`
+    - `output_parser`: The module that implements the `NxHailo.Hailo.OutputParser` behaviour
+    - `output_parser_opts`: A keyword list of options to pass to the output parser.
 
-  - `network_group` - Network group resource reference from `load_network/1`
-
-  ## Examples
-
-      {:ok, network_group} = NxHailo.Hailo.load_network("model.hef")
-      {:ok, pipeline} = NxHailo.Hailo.create_pipeline(network_group)
+  Returns `{:ok, output_data_map}` or `{:error, reason}`.
+  The `output_data_map` will have string keys for output vstream names.
   """
-  @spec create_pipeline(reference()) :: {:ok, reference()} | {:error, String.t()}
-  def create_pipeline(network_group) do
-    case NIF.create_pipeline(network_group) do
-      {:error, reason} -> {:error, reason}
-      pipeline -> {:ok, pipeline}
+  def infer(
+        %Model{
+          pipeline:
+            %API.Pipeline{
+              input_vstream_infos: input_vstream_infos
+            } = pipeline
+        },
+        inputs,
+        output_parser,
+        output_parser_opts \\ []
+      )
+      when is_map(inputs) and is_atom(output_parser) do
+    # The API.infer function expects string keys for input map.
+    # We can be flexible and convert atom keys here if necessary,
+    # or enforce string keys in the doc/spec for this top-level infer.
+    # For now, assume API.infer's validation handles it or user provides string keys.
+    with {:ok, inputs} <- encode_inputs(input_vstream_infos, inputs),
+         {:ok, results} <- API.infer(pipeline, inputs) do
+      output_parser.parse(results, output_parser_opts)
     end
   end
 
-  @doc """
-  Returns information about the output vstreams of an inference pipeline.
-  This is a lower-level function directly interacting with NIFs.
-
-  ## Parameters
-
-  - `pipeline` - Pipeline resource reference from `create_pipeline/1`
-
-  ## Examples
-
-      {:ok, network_group} = NxHailo.Hailo.load_network("model.hef")
-      {:ok, pipeline} = NxHailo.Hailo.create_pipeline(network_group)
-      {:ok, output_info} = NxHailo.Hailo.output_vstream_info(pipeline)
-  """
-  @spec output_vstream_info(reference()) :: {:ok, list(map())} | {:error, String.t()}
-  def output_vstream_info(pipeline) do
-    case NIF.get_output_vstream_infos_from_pipeline(pipeline) do
-      {:error, reason} -> {:error, reason}
-      info -> {:ok, info}
-    end
-  end
-
-  @doc """
-  Runs inference using the provided pipeline and input data.
-  This is a lower-level function directly interacting with NIFs.
-
-  ## Parameters
-
-  - `pipeline` - Pipeline resource reference from `create_pipeline/1`
-  - `input_data` - Map of input vstream names to binary data
-
-  ## Examples
-
-      {:ok, network_group} = NxHailo.Hailo.load_network("model.hef")
-      {:ok, pipeline} = NxHailo.Hailo.create_pipeline(network_group)
-
-      # Prepare input data
-      input_data = %{"input_1" => <<...>>}
-
-      # Run inference
-      {:ok, results} = NxHailo.Hailo.infer(pipeline, input_data)
-  """
-  @spec infer(reference(), map()) :: {:ok, map()} | {:error, String.t()}
-  def infer(pipeline, input_data) when is_map(input_data) do
-    case NIF.infer(pipeline, input_data) do
-      {:error, reason} -> {:error, reason}
-      results -> {:ok, results}
-    end
-  end
-
-  @doc """
-  Convenience function to load a network, create a pipeline, and run inference in one call.
-  This function now uses the top-level `NxHailo.load/1` and `NxHailo.infer/2` API.
-
-  ## Parameters
-
-  - `hef_path` - Path to the HEF file
-  - `input_data` - Map of input vstream names to binary data
-
-  ## Examples
-
-      # Run inference directly
-      {:ok, results} = NxHailo.Hailo.run_inference("model.hef", %{"input_1" => <<...>>})
-  """
-  @spec run_inference(String.t(), map()) :: {:ok, map()} | {:error, String.t()}
-  def run_inference(hef_path, input_data) when is_binary(hef_path) and is_map(input_data) do
-    # Ensure the main NxHailo module is aliased if not already globally available
-    # or use fully qualified NxHailo.load and NxHailo.infer if prefered.
-    # Assuming Elixir's default module resolution or a project-wide alias for NxHailo.
-    with {:ok, model} <- NxHailo.load(hef_path),
-         {:ok, results} <- NxHailo.infer(model, input_data) do
-      {:ok, results}
+  defp encode_inputs(input_vstream_infos, inputs) do
+    if length(input_vstream_infos) != map_size(inputs) do
+      {:error, "Number of input vstream infos does not match number of inputs"}
     else
-      # Propagate errors from load or infer
-      {:error, _reason} = error -> error
-      # Handle any other unexpected non-error tuple from with (should not happen with ok/error tuples)
-      other_error -> {:error, "Unexpected error in run_inference: #{inspect(other_error)}"}
+      result =
+        Enum.reduce_while(input_vstream_infos, {[], 0}, fn vstream_info, {acc, index} ->
+          key = vstream_info.name
+          input = Map.get(inputs, key)
+
+          shape_size = vstream_info.shape |> Map.values() |> Enum.product()
+
+          cond do
+            is_nil(input) ->
+              {:halt, {:error, "Input #{key} not found in inputs"}}
+
+            shape_size != Nx.size(input) ->
+              {:halt,
+               {:error,
+                "Size for input #{index} does not match vstream info shape size. Expected #{inspect(vstream_info.shape)}, got #{inspect(Nx.shape(input))}"}}
+
+            true ->
+              {:cont, {[{key, Nx.to_binary(input)} | acc], index + 1}}
+          end
+        end)
+
+      case result do
+        {:error, reason} ->
+          {:error, reason}
+
+        {inputs, _} ->
+          {:ok, Map.new(inputs)}
+      end
     end
   end
 end

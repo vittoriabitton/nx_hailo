@@ -98,12 +98,7 @@ defmodule NxHailo.MixProject do
         sparse: "hailort/libhailort/include"
       },
       {:req, "~> 0.4.0"},
-      {:yaml_elixir, "~> 2.10"},
-      # TO-DO: we can either vendor in the library,
-      # or do some shenanigans where we make ortex an optional dependency
-      # and define a no-op version of the library so that yolo can be used
-      # without ortex. OR we submit a PR for this.
-      {:yolo, "~> 0.1.2"}
+      {:yaml_elixir, "~> 2.10"}
     ]
   end
 

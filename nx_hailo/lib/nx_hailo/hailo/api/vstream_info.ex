@@ -1,4 +1,4 @@
-defmodule NxHailo.VStreamInfo do
+defmodule NxHailo.Hailo.API.VStreamInfo do
   @moduledoc """
   Represents detailed information for a single Hailo VStream.
   """
@@ -28,15 +28,9 @@ defmodule NxHailo.VStreamInfo do
         }
 
   def from_map(map) when is_map(map) do
-    %NxHailo.VStreamInfo{
-      name: Map.get(map, "name") || Map.get(map, :name),
-      network_name: Map.get(map, "network_name") || Map.get(map, :network_name),
-      direction: Map.get(map, "direction") || Map.get(map, :direction),
-      frame_size: Map.get(map, "frame_size") || Map.get(map, :frame_size),
-      format: Map.get(map, "format") || Map.get(map, :format),
-      shape: Map.get(map, "shape") || Map.get(map, :shape),
-      nms_shape: Map.get(map, "nms_shape") || Map.get(map, :nms_shape),
-      quant_info: Map.get(map, "quant_info") || Map.get(map, :quant_info)
-    }
+    for key <- Map.keys(%__MODULE__{}), into: %{} do
+      value = map[key] || map[Atom.to_string(key)]
+      {key, value}
+    end
   end
 end

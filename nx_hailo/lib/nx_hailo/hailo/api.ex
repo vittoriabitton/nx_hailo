@@ -1,39 +1,12 @@
-defmodule NxHailo.API do
-  @moduledoc """
-  Provides an Elixir API for interacting with Hailo devices.
-  """
+defmodule NxHailo.Hailo.API do
+  @moduledoc false
+  # Internal API for interacting with Hailo devices.
 
   alias NxHailo.NIF
-  alias NxHailo.VStreamInfo
-
-  defmodule VDevice do
-    @moduledoc """
-    Represents a Hailo Virtual Device.
-    """
-    defstruct ref: nil
-  end
-
-  defmodule ConfiguredNetworkGroup do
-    @moduledoc """
-    Represents a configured network group on a VDevice.
-    """
-    defstruct ref: nil,
-              vdevice_ref: nil,
-              # Placeholder, might need to get from NIF if available
-              name: nil,
-              input_vstream_infos: [],
-              output_vstream_infos: []
-  end
-
-  defmodule InferPipeline do
-    @moduledoc """
-    Represents an inference pipeline.
-    """
-    defstruct ref: nil,
-              network_group_ref: nil,
-              input_vstream_infos: [],
-              output_vstream_infos: []
-  end
+  alias NxHailo.Hailo.API.VDevice
+  alias NxHailo.Hailo.API.NetworkGroup
+  alias NxHailo.Hailo.API.Pipeline
+  alias NxHailo.Hailo.API.VStreamInfo
 
   @doc """
   Creates a new Hailo Virtual Device.
@@ -63,7 +36,7 @@ defmodule NxHailo.API do
     - `vdevice`: The `%VDevice{}` struct.
     - `hef_path`: The path to the HEF file (string).
 
-  Returns `{:ok, %ConfiguredNetworkGroup{}}` or `{:error, reason}`.
+  Returns `{:ok, %NetworkGroup{}}` or `{:error, reason}`.
   """
   def configure_network_group(%VDevice{ref: vdevice_ref} = _vdevice, hef_path)
       when is_binary(hef_path) do
@@ -74,7 +47,7 @@ defmodule NxHailo.API do
       output_infos = Enum.map(raw_output_infos, &VStreamInfo.from_map/1)
 
       {:ok,
-       %ConfiguredNetworkGroup{
+       %NetworkGroup{
          ref: ng_ref,
          vdevice_ref: vdevice_ref,
          input_vstream_infos: input_infos,
@@ -89,11 +62,11 @@ defmodule NxHailo.API do
   Creates an inference pipeline from a configured network group.
 
   Parameters:
-    - `network_group`: The `%ConfiguredNetworkGroup{}` struct.
+    - `network_group`: The `%NetworkGroup{}` struct.
 
-  Returns `{:ok, %InferPipeline{}}` or `{:error, reason}`.
+  Returns `{:ok, %Pipeline{}}` or `{:error, reason}`.
   """
-  def create_pipeline(%ConfiguredNetworkGroup{ref: ng_ref} = _network_group) do
+  def create_pipeline(%NetworkGroup{ref: ng_ref} = _network_group) do
     with {:ok, pipeline_ref} <- NIF.create_pipeline(ng_ref),
          {:ok, raw_input_infos} <- NIF.get_input_vstream_infos_from_pipeline(pipeline_ref),
          {:ok, raw_output_infos} <- NIF.get_output_vstream_infos_from_pipeline(pipeline_ref) do
@@ -101,7 +74,7 @@ defmodule NxHailo.API do
       output_infos = Enum.map(raw_output_infos, &VStreamInfo.from_map/1)
 
       {:ok,
-       %InferPipeline{
+       %Pipeline{
          ref: pipeline_ref,
          network_group_ref: ng_ref,
          input_vstream_infos: input_infos,
@@ -114,7 +87,7 @@ defmodule NxHailo.API do
   Runs inference on the given pipeline with the provided input data.
 
   Parameters:
-    - `pipeline`: The `%InferPipeline{}` struct.
+    - `pipeline`: The `%Pipeline{}` struct.
     - `input_data`: A map where keys are input vstream names (strings)
       and values are binaries containing the input data.
       Example: `%{ "input_layer1" => <<...>> }`
@@ -123,7 +96,7 @@ defmodule NxHailo.API do
   The `output_data_map` is a map of output vstream names (strings) to binaries.
   """
   def infer(
-        %InferPipeline{ref: pipeline_ref, input_vstream_infos: expected_infos} = _pipeline,
+        %Pipeline{ref: pipeline_ref, input_vstream_infos: expected_infos} = _pipeline,
         input_data
       )
       when is_map(input_data) do
@@ -138,16 +111,16 @@ defmodule NxHailo.API do
 
   @doc """
   Retrieves input vstream information for a configured resource.
-  Accepts either a `%ConfiguredNetworkGroup{}` or an `%InferPipeline{}` struct.
+  Accepts either a `%NetworkGroup{}` or an `%Pipeline{}` struct.
   """
-  def get_input_vstream_infos(%ConfiguredNetworkGroup{ref: ng_ref}) do
+  def get_input_vstream_infos(%NetworkGroup{ref: ng_ref}) do
     case NIF.get_input_vstream_infos_from_ng(ng_ref) do
       {:ok, raw_infos} -> {:ok, Enum.map(raw_infos, &VStreamInfo.from_map/1)}
       error -> error
     end
   end
 
-  def get_input_vstream_infos(%InferPipeline{ref: pipeline_ref}) do
+  def get_input_vstream_infos(%Pipeline{ref: pipeline_ref}) do
     case NIF.get_input_vstream_infos_from_pipeline(pipeline_ref) do
       {:ok, raw_infos} -> {:ok, Enum.map(raw_infos, &VStreamInfo.from_map/1)}
       error -> error
@@ -156,16 +129,16 @@ defmodule NxHailo.API do
 
   @doc """
   Retrieves output vstream information for a configured resource.
-  Accepts either a `%ConfiguredNetworkGroup{}` or an `%InferPipeline{}` struct.
+  Accepts either a `%NetworkGroup{}` or an `%Pipeline{}` struct.
   """
-  def get_output_vstream_infos(%ConfiguredNetworkGroup{ref: ng_ref}) do
+  def get_output_vstream_infos(%NetworkGroup{ref: ng_ref}) do
     case NIF.get_output_vstream_infos_from_ng(ng_ref) do
       {:ok, raw_infos} -> {:ok, Enum.map(raw_infos, &VStreamInfo.from_map/1)}
       error -> error
     end
   end
 
-  def get_output_vstream_infos(%InferPipeline{ref: pipeline_ref}) do
+  def get_output_vstream_infos(%Pipeline{ref: pipeline_ref}) do
     case NIF.get_output_vstream_infos_from_pipeline(pipeline_ref) do
       {:ok, raw_infos} -> {:ok, Enum.map(raw_infos, &VStreamInfo.from_map/1)}
       error -> error
@@ -173,7 +146,6 @@ defmodule NxHailo.API do
   end
 
   defp validate_input_data(expected_infos, input_data) do
-    dbg(expected_infos)
     expected_names = Enum.map(expected_infos, & &1.name)
     provided_names = Map.keys(input_data)
 

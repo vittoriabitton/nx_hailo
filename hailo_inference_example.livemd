@@ -21,17 +21,17 @@ Mix.install([
 priv = to_string(:code.priv_dir(:nx_hailo))
 
 %{shape: {input_h, input_w, _channels}} = input_image = 
-  Evision.imread("#{priv}/test_image2.jpg")
+  Evision.imread("#{priv}/test_image.jpg")
   # Evision.imread("#{priv}/umbrella.png")
 ```
 
 ```elixir
-{:ok, hailo_model} = NxHailo.load("#{priv}/yolov8m.hef")
+{:ok, hailo_model} = NxHailo.Hailo.load("#{priv}/yolov8m.hef")
 ```
 
 ```elixir
- evision_pad = fn image -> 
-  {h, w, _} = image.shape
+ evision_resize_and_pad = fn image, {h, w}, {target_h, target_h} = target_shape -> 
+   # target_h and target_w should be the same for yolov8
   size = max(h, w)
   pad_h = div(size - h, 2)
   pad_w = div(size - w, 2)
@@ -39,7 +39,8 @@ priv = to_string(:code.priv_dir(:nx_hailo))
   pad_h_extra = rem(size - h, 2)
   pad_w_extra = rem(size - w, 2)
 
-  Evision.copyMakeBorder(
+  # pad to a square
+  padded = Evision.copyMakeBorder(
     image, 
     pad_h, 
     pad_h + pad_h_extra, 
@@ -48,97 +49,51 @@ priv = to_string(:code.priv_dir(:nx_hailo))
     Evision.Constant.cv_BORDER_CONSTANT(), 
     value: {114, 114, 114}
   )
+
+   Evision.resize(padded, target_shape)
 end
 ```
 
 ```elixir
-# center_crop_resize_simple = fn image, target_size ->
-#   {height, width, _} = Evision.Mat.shape(image)
-  
-#   # Find the smaller dimension
-#   min_dim = min(height, width)
-  
-#   # Calculate center crop coordinates on original image
-#   crop_x = div(width - min_dim, 2)
-#   crop_y = div(height - min_dim, 2)
-  
-#   # Crop to square first
-#   roi = {crop_x, crop_y, min_dim, min_dim}
-#   cropped = Evision.Mat.roi(image, roi)
-  
-#   # Then resize to target size
-#   Evision.resize(cropped, {target_size, target_size}, interpolation: Evision.Constant.cv_INTER_AREA())
-# end
+input_shape = {input_h, input_w}
+padded_shape = {640, 640}
+
+padded_image = evision_resize_and_pad.(input_image, input_shape, padded_shape)
 ```
 
 ```elixir
-padded_image =
-  input_image
-  # |> Evision.cvtColor(Evision.Constant.cv_COLOR_BGR2RGB())
-  |> then(evision_pad)
-  # |> center_crop_resize_simple.(224)
-```
-
-```elixir
-hailo_model.pipeline.input_vstream_infos
-```
-
-```elixir
-%{shape: model_shape} = hd(hailo_model.pipeline.input_vstream_infos)
+[%{name: name, shape: model_shape}] = hailo_model.pipeline.input_vstream_infos
+[%{name: output_key}] = hailo_model.pipeline.output_vstream_infos
 
 %{type: {:u, 8}} =
   input_tensor =
   padded_image
   |> Evision.Mat.to_nx()
   |> Nx.backend_transfer()
-|> dbg()
 
-inputs =
-  Enum.zip_with(hailo_model.pipeline.input_vstream_infos, [input_tensor], fn
-    %{name: name}, tensor ->
-      {name, Nx.to_binary(tensor)}
-  end)
-  |> Map.new()
-
-{:ok, outputs} = NxHailo.infer(hailo_model, inputs)
-
-{_, t_data} = Enum.at(outputs, 0)
-
-detected_objects =
-  t_data
-
-# |> YOLO.FrameScalers.scale_bboxes_to_original(scaling_config)
-# |> YOLO.to_detected_objects(yolo_model.classes)
-```
-
-```elixir
-parsed = NxHailo.Hailo.YoloV8Parser.parse_nms_output(t_data, 80)
-```
-
-```elixir
 classes =
   File.read!("#{priv}/yolov8m_classes.json")
   |> Jason.decode!()
   |> Enum.with_index()
   |> Map.new(fn {v, k} -> {k, v} end)
+```
 
-yolo_lib_bboxes =
-  for class_items <- parsed, det <- class_items.detections do
-    [xmin, ymin, xmax, ymax] = Enum.map(det.bbox, &round(&1 * 640))
+```elixir
+{:ok, raw_detected_objects} =
+  NxHailo.Hailo.infer(
+    hailo_model,
+    %{name => input_tensor},
+    NxHailo.Parsers.YoloV8,
+    classes: classes,
+    key: output_key
+  )
+```
 
-    xc = div(xmax + xmin, 2)
-    yc = div(ymax + ymin, 2)
-    w = xmax - xmin
-    h = ymax - ymin
-
-    [xc, yc, w, h, det.score, det.class_id]
-  end
-
-scaler = YOLO.FrameScalers.EvisionScaler
-
-{_, config} = YOLO.FrameScalers.fit(input_image, {640, 640}, scaler)
-  
-scaled_bboxes = YOLO.FrameScalers.scale_bboxes_to_original(yolo_lib_bboxes, config)
+```elixir
+detected_objects = 
+  raw_detected_objects
+  |> Enum.reject(& &1.score < 0.5)
+  |> NxHailo.Parsers.YoloV8.postprocess(input_shape, padded_shape)
 ```
 
 ```elixir
@@ -158,23 +113,27 @@ defmodule YOLODraw do
     {fps_width, fps_height, _} = Image.shape(fps_image)
 
     detected_objects
-    |> Enum.reduce(image, fn %{bbox: bbox}=od, image ->
-      left = max(round(bbox.cx - bbox.w/2), 0)
-      top = max(round(bbox.cy - bbox.h/2), 0)
-      prob = round(od.prob * 100)
-      color = class_color(od.class_idx)
+    |> Enum.reduce(image, fn %NxHailo.Parsers.YoloV8.DetectedObject{} = obj, image ->
+      left = obj.xmin
+      top = obj.ymin
+      
+      width = obj.xmax - obj.xmin
+      height = obj.ymax - obj.ymin
+      
+      prob = round(obj.score * 100)
+      color = class_color(obj.class_id)
       
       text_image = 
-        Image.Text.simple_text!("#{od.class} #{prob}%", text_fill_color: "white", font_size: @font_size)
-        |> Image.Text.add_background_padding!(background_fill_color: color, padding: [5, 5])
-        |> Image.Text.add_background!(background_fill_color: color)
+        Image.Text.simple_text!("#{obj.class_name} #{prob}%", text_fill_color: "white", font_size: @font_size)
+        |> Image.Text.add_background_padding!(background_fill_color: "black", padding: [5, 5])
+        |> Image.Text.add_background!(background_fill_color: "black")
         |> Image.split_alpha()
         |> elem(0)
 
       {_, text_height, _} = Image.shape(text_image)
       
       image
-      |> Image.Draw.rect!(left,top,bbox.w,bbox.h,[
+      |> Image.Draw.rect!(left, top, width, height,[
         stroke_width: @stroke_width, color: color, fill: false
       ])
       |> Image.Draw.image!(text_image, left, max(top - text_height - 2, 0))
@@ -209,8 +168,5 @@ end
 ```
 
 ```elixir
-detected_objects = 
-  YOLO.Utils.to_detected_objects(scaled_bboxes, classes)
-
 YOLODraw.draw_detected_objects(input_image, detected_objects, "FPS LABEL")
 ```
