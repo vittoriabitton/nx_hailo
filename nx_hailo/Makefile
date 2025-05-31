@@ -13,7 +13,8 @@ NX_HAILO_SO = $(PRIV_DIR)/libnx_hailo.so
 
 # HailoRT configuration
 # HAILO_INCLUDE_DIR is set in mix.exs
-HAILO_LIB_DIR ?= /usr/lib
+# HAILORT_LIB_DIR defaulting to the setup in UTM
+HAILORT_LIB_DIR ?= ../hailo_rpi5/.nerves/artifacts/hailo_rpi5-portable-0.4.0/target/usr/lib
 
 # Build flags
 CFLAGS += -I$(FINE_INCLUDE_DIR) -I$(HAILO_INCLUDE_DIR) -fPIC -fvisibility=hidden -I$(ERTS_INCLUDE_DIR) -Wall -std=c++17
@@ -26,8 +27,6 @@ CFLAGS += -O3
 endif
 
 # LDFLAGS must include the sysroot's lib directory for cross-compilation
-# HAILORT_LIB_DIR defaulting to the setup in UTM
-HAILORT_LIB_DIR ?= ../hailo_rpi5/.nerves/artifacts/hailo_rpi5-portable-0.4.0/target/usr/lib
 
 LDFLAGS = -shared -L$(HAILORT_LIB_DIR) -lhailort
 
