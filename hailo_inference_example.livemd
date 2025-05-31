@@ -21,8 +21,8 @@ Mix.install([
 priv = to_string(:code.priv_dir(:nx_hailo))
 
 %{shape: {input_h, input_w, _channels}} = input_image = 
-  Evision.imread("#{priv}/test_image.jpg")
-  # Evision.imread("#{priv}/umbrella.png")
+  # Evision.imread("#{priv}/test_image.jpg")
+  Evision.imread("#{priv}/umbrella2.png")
 ```
 
 ```elixir
@@ -93,7 +93,7 @@ classes =
 detected_objects = 
   raw_detected_objects
   |> Enum.reject(& &1.score < 0.5)
-  |> NxHailo.Parsers.YoloV8.postprocess(input_shape, padded_shape)
+  |> NxHailo.Parsers.YoloV8.postprocess(input_shape)
 ```
 
 ```elixir
@@ -116,6 +116,8 @@ defmodule YOLODraw do
     |> Enum.reduce(image, fn %NxHailo.Parsers.YoloV8.DetectedObject{} = obj, image ->
       left = obj.xmin
       top = obj.ymin
+
+      dbg({left, top})
       
       width = obj.xmax - obj.xmin
       height = obj.ymax - obj.ymin

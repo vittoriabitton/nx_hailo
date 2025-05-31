@@ -53,18 +53,22 @@ defmodule NxHailo.Parsers.YoloV8 do
 
   A list of `%DetectedObject{}` structs.
   """
-  def postprocess(detected_objects, input_shape, padded_shape) do
+  def postprocess(detected_objects, input_shape) do
     {input_height, input_width} = input_shape
-    {padded_height, padded_width} = padded_shape
 
-    scale = max(input_height, input_width) / max(padded_height, padded_width)
+    # pad to the larger square
+    max_dim = max(input_height, input_width)
 
-    Enum.map(detected_objects, fn %RawDetectedObject{} = object ->
-      %DetectedObject{
-        ymin: remap_coordinate(object.ymin, scale, input_height, padded_height),
-        ymax: remap_coordinate(object.ymax, scale, input_height, padded_height),
-        xmin: remap_coordinate(object.xmin, scale, input_width, padded_width),
-        xmax: remap_coordinate(object.xmax, scale, input_width, padded_width),
+    # get the top and left padding
+    padding_h = div(max_dim - input_height, 2)
+    padding_w = div(max_dim - input_width, 2)
+
+    Enum.map(detected_objects, fn %NxHailo.Parsers.YoloV8.RawDetectedObject{} = object ->
+      %NxHailo.Parsers.YoloV8.DetectedObject{
+        ymin: remap_coordinate(object.ymin, max_dim, padding_h, input_height),
+        ymax: remap_coordinate(object.ymax, max_dim, padding_h, input_height),
+        xmin: remap_coordinate(object.xmin, max_dim, padding_w, input_width),
+        xmax: remap_coordinate(object.xmax, max_dim, padding_w, input_width),
         score: object.score,
         class_name: object.class_name,
         class_id: object.class_id
@@ -72,15 +76,14 @@ defmodule NxHailo.Parsers.YoloV8 do
     end)
   end
 
-  defp remap_coordinate(coordinate, scale, input_size, padded_size) do
-    padded_denorm = coordinate * padded_size
-    unpadded_denorm = padded_denorm - (padded_size - input_size) / 2
-    rescaled = unpadded_denorm * scale
+  defp remap_coordinate(coordinate, scale, padding, max_size) do
+    padded_denorm = coordinate * scale
+    unpadded_denorm = padded_denorm - padding
 
-    rescaled
+    unpadded_denorm
     |> round()
     |> max(0)
-    |> min(input_size)
+    |> min(max_size)
   end
 
   defp parse_list([], _, _, acc), do: {:ok, acc}
