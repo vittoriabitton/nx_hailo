@@ -79,7 +79,10 @@ defmodule NxHailo.MixProject do
         sparse: "hailort/libhailort/include"
       },
       {:req, "~> 0.4.0"},
-      {:yaml_elixir, "~> 2.10"}
+      {:yaml_elixir, "~> 2.10"},
+
+      # Deps for running the livebook demo
+      {:kino, "~> 0.14"}
     ]
   end
 
