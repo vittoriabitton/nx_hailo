@@ -22,7 +22,7 @@ is used:
 export MIX_TARGET=hailo_rpi5
 export XLA_TARGET_PLATFORM=aarch64-linux-gnu
 export EXLA_FORCE_REBUILD=false
-export EVISION_PREFER_PRECOMPILED=false
+export EVISION_PREFER_PRECOMPILED=true
 ```
 
 - If OpenCV fails, go into the Evision deps folder and edit the download scrips to have the --no-check-certificate option
@@ -38,7 +38,7 @@ If compiling with Docker, after these commands, you must copy the libhailort.so 
 mkdir -p .libhailo
 docker cp <container_name_or_id>:/target/usr/lib/libhailort.so .libhailo
 docker cp <container_name_or_id>:/target/usr/lib/libhailort.so.4.20.0 .libhailo
-export HAILO_LIB_DIR=.libhailo
+export HAILORT_LIB_DIR=.libhailo
 ```
 
 - The SD card must either be:

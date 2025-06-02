@@ -4,6 +4,12 @@
 
 This notebook should be run as an attached node to a Nerves system that has the NxHailo lib installed, as well as the Hailo AI Hat set up.
 
+After having your Nerves app up and running, run the following commands from its shell:
+
+1. `cmd "epmd -daemon"`
+2. `Node.start(:"nerves@<IP OF THE DEVICE>")`
+3. `Node.set_cookie(:"nerves-cookie")`
+
 ```elixir
 priv = to_string(:code.priv_dir(:nx_hailo))
 {:ok, hailo_model} = NxHailo.Hailo.load("#{priv}/yolov8m.hef")
