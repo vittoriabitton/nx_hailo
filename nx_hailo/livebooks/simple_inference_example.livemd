@@ -2,7 +2,7 @@
 
 ```elixir
 Mix.install([
-  {:nx_hailo, github: "vittoriabitton/nx-with-hailo", sparse: "nx_hailo"},
+  {:nx_hailo, github: "vittoriabitton/nx_hailo", sparse: "nx_hailo"},
   {:image, "~> 0.54.4"},
   {:kino, "~> 0.14.0"}
 ],[
