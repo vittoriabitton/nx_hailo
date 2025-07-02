@@ -3,10 +3,7 @@ defmodule NxHailo.MixProject do
 
   @app :nx_hailo
   @version "0.1.0"
-  @all_targets [
-    :rpi5,
-    :hailo_rpi5
-  ]
+  @all_targets [:rpi5]
 
   def project do
     [
@@ -23,9 +20,7 @@ defmodule NxHailo.MixProject do
       make_env: fn ->
         %{
           "MIX_BUILD_EMBEDDED" => "#{Mix.Project.config()[:build_embedded]}",
-          "FINE_INCLUDE_DIR" => Fine.include_dir(),
-          "HAILO_INCLUDE_DIR" =>
-            Path.join([__DIR__, "deps/hailort_include/hailort/libhailort/include"])
+          "FINE_INCLUDE_DIR" => Fine.include_dir()
         }
       end
     ]
@@ -34,8 +29,7 @@ defmodule NxHailo.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: [:logger, :runtime_tools],
-      mod: {NxHailo.Application, []}
+      extra_applications: [:logger, :runtime_tools]
     ]
   end
 
@@ -60,24 +54,13 @@ defmodule NxHailo.MixProject do
       # bumps to Nerves systems. Since these include Linux kernel and Erlang
       # version updates, please review their release notes in case
       # changes to your application are needed.
-      {:nerves_system_rpi5, "~> 0.2", runtime: false, targets: :rpi5},
-      {:hailo_rpi5,
-       path: "../hailo_rpi5", runtime: false, targets: :hailo_rpi5, nerves: [compile: true]},
+      {:nerves_system_rpi5, "~> 0.6.1", runtime: false, targets: :rpi5},
       {:evision, "~> 0.2"},
       {:exla, "~> 0.9.0"},
       {:bandit, "~> 1.5"},
       {:nx, "~> 0.6"},
       {:elixir_make, "~> 0.6", runtime: false},
       {:fine, "~> 0.1.0", runtime: false},
-      {
-        :hailort_include,
-        ">= 0.0.0",
-        github: "cocoa-xu/hailort",
-        ref: "v4.20.0-build-nerves",
-        app: false,
-        compile: false,
-        sparse: "hailort/libhailort/include"
-      },
       {:req, "~> 0.4.0"},
       {:yaml_elixir, "~> 2.10"},
 

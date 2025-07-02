@@ -11,13 +11,8 @@ NX_HAILO_DIR = c_src
 PRIV_DIR = $(MIX_APP_PATH)/priv
 NX_HAILO_SO = $(PRIV_DIR)/libnx_hailo.so
 
-# HailoRT configuration
-# HAILO_INCLUDE_DIR is set in mix.exs
-# HAILORT_LIB_DIR defaulting to the setup in UTM
-HAILORT_LIB_DIR ?= ../hailo_rpi5/.nerves/artifacts/hailo_rpi5-portable-0.4.0/target/usr/lib
-
 # Build flags
-CFLAGS += -I$(FINE_INCLUDE_DIR) -I$(HAILO_INCLUDE_DIR) -fPIC -fvisibility=hidden -I$(ERTS_INCLUDE_DIR) -Wall -std=c++17
+CFLAGS += -fPIC -I$(FINE_INCLUDE_DIR) -fvisibility=hidden -I$(ERTS_INCLUDE_DIR) -Wall -std=c++17
 CFLAGS += -Wno-deprecated-declarations
 
 ifdef DEBUG
@@ -26,9 +21,8 @@ else
 CFLAGS += -O3
 endif
 
-# LDFLAGS must include the sysroot's lib directory for cross-compilation
-
-LDFLAGS = -shared -L$(HAILORT_LIB_DIR) -lhailort
+# The Hailo runtime shared library is supplied by the Nerves system
+LDFLAGS += -fPIC -shared -lhailort
 
 SOURCES = $(NX_HAILO_DIR)/nx_hailo.cpp
 OBJECTS = $(patsubst $(NX_HAILO_DIR)/%.cpp,$(NX_HAILO_CACHE_OBJ_DIR)/%.o,$(SOURCES))
