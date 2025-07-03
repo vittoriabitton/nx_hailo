@@ -19,34 +19,21 @@ is used:
 - Set the environment variables:
 
 ```shell
-export MIX_TARGET=hailo_rpi5
+export MIX_TARGET=rpi5
 export XLA_TARGET_PLATFORM=aarch64-linux-gnu
 export EXLA_FORCE_REBUILD=false
 export EVISION_PREFER_PRECOMPILED=true
 ```
 
+- `mix deps.get`
+- `mix firmware`
 - If OpenCV fails, go into the Evision deps folder and edit the download scrips to have the --no-check-certificate option
-
-- To ensure hailort is included, run `mix nerves.system.shell`. This will build the firmware and then give you a command to go into the build directory. From there:
-  - `make hailort`
-  - `make hailort-drivers`
-  - `make all`
-
-If compiling with Docker, after these commands, you must copy the libhailort.so and libhailort.so.4.20 files from the container's /home/nerves/project/target/usr/lib:
-
-```shell
-mkdir -p .libhailo
-docker cp <container_name_or_id>:/target/usr/lib/libhailort.so .libhailo
-docker cp <container_name_or_id>:/target/usr/lib/libhailort.so.4.20.0 .libhailo
-export HAILORT_LIB_DIR=.libhailo
-```
 
 - The SD card must either be:
   - read via an USB reader and mounted to UTM; OR
   - mounted via the SD card reader on the Macbook and then the device file pointer must be added to the shared directory for UTM
 
 - `sudo chown $USER:disk <sd card device>` to remove the need for `sudo`
-- `mix firmware`
 - `mix burn`
 
 - For `mix upload`, use `mix upload <ip>`, because UTM lives in a different subnet and won't resolve `nerves.local`. Use `ping nerves.local` on the host OS to discover the IP address.
