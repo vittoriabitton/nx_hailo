@@ -56,12 +56,12 @@ defmodule NxHailo.MixProject do
       # changes to your application are needed.
       {:nerves_system_rpi5, "~> 0.6.1", runtime: false, targets: :rpi5},
       {:evision, "~> 0.2"},
-      {:exla, "~> 0.9.0"},
+      {:exla, "~> 0.10.0"},
       {:bandit, "~> 1.5"},
       {:nx, "~> 0.6"},
       {:elixir_make, "~> 0.6", runtime: false},
       {:fine, "~> 0.1.0", runtime: false},
-      {:req, "~> 0.4.0"},
+      {:req, "~> 0.5.10", runtime: false, optional: true},
       {:yaml_elixir, "~> 2.10"},
 
       # Deps for running the livebook demo

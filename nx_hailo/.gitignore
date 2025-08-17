@@ -27,4 +27,3 @@ hailort.log
 /priv/*.marker
 .envrc
 .env
-.libhailo
