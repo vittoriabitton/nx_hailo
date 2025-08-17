@@ -3,7 +3,7 @@ defmodule NxHailo.MixProject do
 
   @app :nx_hailo
   @version "0.1.0"
-  @all_targets [:rpi5]
+  @all_targets [:rpi5, :custom_rpi5]
 
   def project do
     [
@@ -55,8 +55,13 @@ defmodule NxHailo.MixProject do
       # version updates, please review their release notes in case
       # changes to your application are needed.
       {:nerves_system_rpi5, "~> 0.6.1", runtime: false, targets: :rpi5},
-      {:evision, "~> 0.2"},
-      {:exla, "~> 0.9.0"},
+      {:custom_rpi5,
+       path: "../nerves_system_rpi5",
+       runtime: false,
+       targets: :custom_rpi5,
+       nerves: [compile: true]},
+
+      {:exla, "~> 0.10.0"},
       {:bandit, "~> 1.5"},
       {:nx, "~> 0.6"},
       {:elixir_make, "~> 0.6", runtime: false},
