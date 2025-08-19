@@ -2,8 +2,7 @@
 
 ## Installing in your project
 
-If installing as a Git dependency, you should make sure that the `:sparse` option
-is used:
+If installing as a Git:
 
 ```elixir
 [
