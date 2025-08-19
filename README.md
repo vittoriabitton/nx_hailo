@@ -7,7 +7,7 @@ is used:
 
 ```elixir
 [
-  {:nx_hailo, github: "vittoriabitton/nx_hailo", sparse: "nx_hailo"}
+  {:nx_hailo, github: "vittoriabitton/nx_hailo"}
 ]
 ```
 
@@ -42,4 +42,4 @@ export EVISION_PREFER_PRECOMPILED=true
 
 # Possible issues
 
-- for some reason evision was seeing i686 target toolchain, so I had to manually link gcc/g++ to the proper aarch64 toolchain. This also included creating gcc-gcc and gcc-g++ links besides gcc and g++ inside the /artifacts/hailo_rpi5-portable-0.4.0/host/bin/
+- for some reason evision was seeing i686 target toolchain, so I had to manually link gcc/g++ to the proper aarch64 toolchain. This also included creating gcc-gcc and gcc-g++ links besides gcc and g++ inside the /artifacts/rpi5-portable-0.4.0/host/bin/
