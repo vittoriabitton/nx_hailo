@@ -1,4 +1,4 @@
-defmodule NxHailo.Hailo.API.NetworkGroup do
+defmodule NxHailo.API.NetworkGroup do
   @moduledoc """
   Represents a configured network group on a VDevice.
   """

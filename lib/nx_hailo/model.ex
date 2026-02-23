@@ -1,4 +1,4 @@
-defmodule NxHailo.Hailo.Model do
+defmodule NxHailo.Model do
   @moduledoc """
   Represents a loaded Hailo model, ready for inference.
   This struct encapsulates the inference pipeline and associated metadata.
@@ -8,7 +8,7 @@ defmodule NxHailo.Hailo.Model do
             name: nil
 
   @type t :: %__MODULE__{
-          pipeline: NxHailo.Hailo.API.Pipeline.t(),
+          pipeline: NxHailo.API.Pipeline.t(),
           name: String.t()
         }
 end

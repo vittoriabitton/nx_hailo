@@ -1,4 +1,4 @@
-defmodule NxHailo.Hailo.API.VStreamInfo do
+defmodule NxHailo.API.VStreamInfo do
   @moduledoc """
   Represents detailed information for a single Hailo VStream.
   """

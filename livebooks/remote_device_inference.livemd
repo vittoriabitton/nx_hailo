@@ -12,7 +12,7 @@ After having your Nerves app up and running, run the following commands from its
 
 ```elixir
 priv = to_string(:code.priv_dir(:nx_hailo))
-{:ok, hailo_model} = NxHailo.Hailo.load("#{priv}/yolov8m.hef")
+{:ok, hailo_model} = NxHailo.load("#{priv}/yolov8m.hef")
 ```
 
 ```elixir
@@ -49,10 +49,10 @@ find_working_cap = fn ->
     size = max(h, w)
     pad_h = div(size - h, 2)
     pad_w = div(size - w, 2)
-  
+
     pad_h_extra = rem(size - h, 2)
     pad_w_extra = rem(size - w, 2)
-  
+
     # pad to a square
     padded = Evision.copyMakeBorder(
       image,
@@ -63,7 +63,7 @@ find_working_cap = fn ->
       Evision.Constant.cv_BORDER_CONSTANT(),
       value: {114, 114, 114}
     )
-  
+
      Evision.resize(padded, target_shape)
   end
 ```
@@ -313,7 +313,7 @@ Kino.animate(fps, fn _ ->
     |> Nx.backend_transfer()
 
   {:ok, raw_detected_objects} =
-    NxHailo.Hailo.infer(
+    NxHailo.infer(
       hailo_model,
       %{name => input_tensor},
       NxHailo.Parsers.YoloV8,

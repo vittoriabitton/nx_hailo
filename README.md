@@ -36,8 +36,8 @@ NX_HAILO_DOWNLOAD_MODELS=false mix compile
 
 ```elixir
 # Load a model and run inference
-{:ok, model} = NxHailo.Hailo.load("priv/yolov8m.hef")
-{:ok, results} = NxHailo.Hailo.run(model, input_tensor)
+{:ok, model} = NxHailo.load("priv/yolov8m.hef")
+{:ok, results} = NxHailo.run(model, input_tensor)
 ```
 
 See the `livebooks/` directory for runnable examples.

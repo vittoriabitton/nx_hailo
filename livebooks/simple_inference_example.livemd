@@ -26,7 +26,7 @@ priv = to_string(:code.priv_dir(:nx_hailo))
 ```
 
 ```elixir
-{:ok, hailo_model} = NxHailo.Hailo.load("#{priv}/yolov8m.hef")
+{:ok, hailo_model} = NxHailo.load("#{priv}/yolov8m.hef")
 ```
 
 ```elixir
@@ -80,7 +80,7 @@ classes =
 
 ```elixir
 {:ok, raw_detected_objects} =
-  NxHailo.Hailo.infer(
+  NxHailo.infer(
     hailo_model,
     %{name => input_tensor},
     NxHailo.Parsers.YoloV8,
