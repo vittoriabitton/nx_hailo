@@ -32,17 +32,11 @@ defmodule NxHailo.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:evision, "~> 0.2"},
-      {:exla, "~> 0.10.0"},
-      {:bandit, "~> 1.5"},
       {:nx, "~> 0.6"},
       {:elixir_make, "~> 0.6", runtime: false},
       {:fine, "~> 0.1.0", runtime: false},
       {:req, "~> 0.5.10", runtime: false, optional: true},
-      {:yaml_elixir, "~> 2.10"},
-
-      # Deps for running the livebook demo
-      {:kino, "~> 0.14"}
+      {:yaml_elixir, "~> 2.10"}
     ]
   end
 
@@ -60,20 +54,22 @@ defmodule NxHailo.MixProject do
   end
 
   defp download_yolov8_model(_args) do
-    {:ok, _} = Application.ensure_all_started([:req])
+    if System.get_env("NX_HAILO_DOWNLOAD_MODELS", "true") in ["1", "true", "yes"] do
+      {:ok, _} = Application.ensure_all_started([:req])
 
-    dataset_yml =
-      "https://raw.githubusercontent.com/ultralytics/ultralytics/refs/heads/main/ultralytics/cfg/datasets/coco.yaml"
+      dataset_yml =
+        "https://raw.githubusercontent.com/ultralytics/ultralytics/refs/heads/main/ultralytics/cfg/datasets/coco.yaml"
 
-    model_hef_url =
-      "https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/v2.15.0/hailo8l/yolov8m.hef"
+      model_hef_url =
+        "https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/v2.15.0/hailo8l/yolov8m.hef"
 
-    priv = Path.join(__DIR__, "priv")
+      priv = Path.join(__DIR__, "priv")
 
-    File.mkdir_p!(priv)
+      File.mkdir_p!(priv)
 
-    download_dataset_to_json_file(dataset_yml, Path.join(priv, "yolov8m_classes.json"))
-    download_model(model_hef_url, Path.join(priv, "yolov8m.hef"))
+      download_dataset_to_json_file(dataset_yml, Path.join(priv, "yolov8m_classes.json"))
+      download_model(model_hef_url, Path.join(priv, "yolov8m.hef"))
+    end
   end
 
   defp download_dataset_to_json_file(url, filename) do
