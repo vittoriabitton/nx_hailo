@@ -2,16 +2,10 @@
 
 ```elixir
 Mix.install([
-  {:nx_hailo, github: "vittoriabitton/nx_hailo"},
+  {:nx_hailo, path: Path.join(__DIR__, "..")},
+  {:evision, "~> 0.2"},
   {:image, "~> 0.54.4"},
   {:kino, "~> 0.14.0"}
-],[
-  config: [
-    nx: [default_backend: EXLA.Backend],
-  ],
-  system_env: %{
-    "XLA_TARGET_PLATFORM"=> "aarch64-linux-gnu"
-  }
 ])
 ```
 
