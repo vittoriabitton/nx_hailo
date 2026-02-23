@@ -1,0 +1,7 @@
+/_build/
+/deps/
+/.elixir_ls/
+/nerves_artifacts/
+nerves_system_br/
+*.sw?
+.DS_Store
