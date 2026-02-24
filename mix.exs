@@ -35,7 +35,7 @@ defmodule NxHailo.MixProject do
       {:nx, "~> 0.6"},
       {:elixir_make, "~> 0.6", runtime: false},
       {:fine, "~> 0.1.0", runtime: false},
-      {:req, "~> 0.5.10", runtime: false, optional: true},
+      {:req, "~> 0.5.10", runtime: false},
       {:yaml_elixir, "~> 2.10"}
     ]
   end

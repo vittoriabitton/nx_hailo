@@ -12,7 +12,8 @@
 -code_path_choice strict
 
 ## Use Elixir's IEx instead of the Erlang shell
--user Elixir.IEx.CLI
+-user elixir
+-run elixir start_cli
 
 ## Load the IEx config for Nerves helpers
 -dot-iex /etc/iex.exs

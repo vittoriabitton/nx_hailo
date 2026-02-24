@@ -101,6 +101,10 @@ fine::Atom format_order_to_atom(hailo_format_order_t order) {
     return fine::Atom("hailo_nms_with_byte_mask");
   case HAILO_FORMAT_ORDER_HAILO_NMS_BY_CLASS:
     return fine::Atom("hailo_nms_by_class");
+  case HAILO_FORMAT_ORDER_HAILO_NMS_BY_SCORE:
+    return fine::Atom("hailo_nms_by_score");
+  case HAILO_FORMAT_ORDER_HAILO_NMS_ON_CHIP:
+    return fine::Atom("hailo_nms_on_chip");
   default:
     return fine::Atom("unknown_order");
   }
@@ -329,7 +333,9 @@ build_detailed_vstream_info_map(ErlNifEnv *env,
   bool is_nms =
       (actual_format_order == HAILO_FORMAT_ORDER_HAILO_NMS ||
        actual_format_order == HAILO_FORMAT_ORDER_HAILO_NMS_WITH_BYTE_MASK ||
-       actual_format_order == HAILO_FORMAT_ORDER_HAILO_NMS_BY_CLASS);
+       actual_format_order == HAILO_FORMAT_ORDER_HAILO_NMS_BY_CLASS ||
+       actual_format_order == HAILO_FORMAT_ORDER_HAILO_NMS_BY_SCORE ||
+       actual_format_order == HAILO_FORMAT_ORDER_HAILO_NMS_ON_CHIP);
   // The placeholder '20' is removed. We rely on the actual enum
   // HAILO_FORMAT_ORDER_HAILO_NMS_BY_CLASS. Ensure this enum is correctly
   // defined and valued in your HailoRT headers.
@@ -343,24 +349,21 @@ build_detailed_vstream_info_map(ErlNifEnv *env,
                               vstream_info.nms_shape.number_of_classes)),
         &nms_shape_map_erl);
 
-    // Use the union members based on nms_shape.order_type
-    // Exposing both might be simplest if Elixir side can pick
+    // Expose both bbox count fields; use format.order (via vstream_info.format) on
+    // the Elixir side to determine which applies (by_score -> max_bboxes_total,
+    // by_class/on_chip -> max_bboxes_per_class)
     enif_make_map_put(
         env, nms_shape_map_erl,
-        fine::encode(env, fine::Atom("max_bboxes_per_class_or_total")),
-        (vstream_info.nms_shape.order_type == HAILO_NMS_RESULT_ORDER_BY_SCORE)
-            ? fine::encode(env, static_cast<uint64_t>(
-                                    vstream_info.nms_shape.max_bboxes_total))
-            : fine::encode(env,
-                           static_cast<uint64_t>(
-                               vstream_info.nms_shape.max_bboxes_per_class)),
+        fine::encode(env, fine::Atom("max_bboxes_per_class")),
+        fine::encode(env, static_cast<uint64_t>(
+                              vstream_info.nms_shape.max_bboxes_per_class)),
         &nms_shape_map_erl);
-    // Also expose order_type itself
-    // You'll need an atom helper for hailo_nms_result_order_type_t
-    // ERL_NIF_TERM nms_order_type_atom = nms_result_order_type_to_atom(env,
-    // vstream_info.nms_shape.order_type); enif_make_map_put(env,
-    // nms_shape_map_erl, fine::encode(env, fine::Atom("nms_result_order")),
-    // nms_order_type_atom, &nms_shape_map_erl);
+    enif_make_map_put(
+        env, nms_shape_map_erl,
+        fine::encode(env, fine::Atom("max_bboxes_total")),
+        fine::encode(env, static_cast<uint64_t>(
+                              vstream_info.nms_shape.max_bboxes_total)),
+        &nms_shape_map_erl);
 
     enif_make_map_put(env, map_term, fine::encode(env, fine::Atom("nms_shape")),
                       nms_shape_map_erl, &map_term);
@@ -368,14 +371,15 @@ build_detailed_vstream_info_map(ErlNifEnv *env,
                       fine::encode(env, fine::Atom("nil")), &map_term);
 
     // Calculate frame_size for NMS stream
+    // format.order replaces nms_shape.order_type which was removed in v4.22
     uint32_t num_detections_for_size_calc = 0;
-    if (vstream_info.nms_shape.order_type == HAILO_NMS_RESULT_ORDER_BY_CLASS ||
-        vstream_info.nms_shape.order_type == HAILO_NMS_RESULT_ORDER_HW) {
+    if (vstream_info.format.order == HAILO_FORMAT_ORDER_HAILO_NMS_BY_CLASS ||
+        vstream_info.format.order == HAILO_FORMAT_ORDER_HAILO_NMS_ON_CHIP) {
       num_detections_for_size_calc =
           vstream_info.nms_shape.number_of_classes *
           vstream_info.nms_shape.max_bboxes_per_class;
-    } else if (vstream_info.nms_shape.order_type ==
-               HAILO_NMS_RESULT_ORDER_BY_SCORE) {
+    } else if (vstream_info.format.order ==
+               HAILO_FORMAT_ORDER_HAILO_NMS_BY_SCORE) {
       num_detections_for_size_calc = vstream_info.nms_shape.max_bboxes_total;
     } else {
       // Default or error: if nms_shape.order_type is unknown, use

@@ -11,7 +11,8 @@ defmodule NxHailo.API.VStreamInfo do
             format: %{},
             # %{height: integer(), width: integer(), features: integer()} or nil
             shape: nil,
-            # %{number_of_classes: integer(), max_bboxes_per_class_or_total: integer()} or nil
+            # %{number_of_classes: integer(), max_bboxes_per_class: integer(), max_bboxes_total: integer()} or nil
+            # Use format.order (:hailo_nms_by_score -> max_bboxes_total applies, otherwise max_bboxes_per_class)
             nms_shape: nil,
             # %{qp_zp: float(), qp_scale: float()} or nil
             quant_info: nil
