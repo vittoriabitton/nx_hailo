@@ -348,7 +348,7 @@ build_detailed_vstream_info_map(ErlNifEnv *env,
     enif_make_map_put(
         env, nms_shape_map_erl,
         fine::encode(env, fine::Atom("max_bboxes_per_class_or_total")),
-        (vstream_info.nms_shape.order_type == HAILO_NMS_RESULT_ORDER_BY_SCORE)
+        (vstream_info.format.order == HAILO_FORMAT_ORDER_HAILO_NMS_BY_SCORE)
             ? fine::encode(env, static_cast<uint64_t>(
                                     vstream_info.nms_shape.max_bboxes_total))
             : fine::encode(env,
@@ -369,13 +369,12 @@ build_detailed_vstream_info_map(ErlNifEnv *env,
 
     // Calculate frame_size for NMS stream
     uint32_t num_detections_for_size_calc = 0;
-    if (vstream_info.nms_shape.order_type == HAILO_NMS_RESULT_ORDER_BY_CLASS ||
-        vstream_info.nms_shape.order_type == HAILO_NMS_RESULT_ORDER_HW) {
+    if (vstream_info.format.order == HAILO_FORMAT_ORDER_HAILO_NMS_BY_CLASS ||
+        vstream_info.format.order == HAILO_FORMAT_ORDER_HAILO_NMS_ON_CHIP) {
       num_detections_for_size_calc =
           vstream_info.nms_shape.number_of_classes *
           vstream_info.nms_shape.max_bboxes_per_class;
-    } else if (vstream_info.nms_shape.order_type ==
-               HAILO_NMS_RESULT_ORDER_BY_SCORE) {
+    } else if (vstream_info.format.order == HAILO_FORMAT_ORDER_HAILO_NMS_BY_SCORE) {
       num_detections_for_size_calc = vstream_info.nms_shape.max_bboxes_total;
     } else {
       // Default or error: if nms_shape.order_type is unknown, use
