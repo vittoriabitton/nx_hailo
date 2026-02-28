@@ -27,3 +27,4 @@ hailort.log
 /priv/*.marker
 .envrc
 .env
+.DS_Store

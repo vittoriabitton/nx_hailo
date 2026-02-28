@@ -26,7 +26,7 @@ priv = to_string(:code.priv_dir(:nx_hailo))
 ```
 
 ```elixir
-{:ok, hailo_model} = NxHailo.Hailo.load("#{priv}/yolov8m.hef")
+{:ok, hailo_model} = NxHailo.load_model(:yolov8m)
 ```
 
 ```elixir
@@ -71,11 +71,7 @@ padded_image = evision_resize_and_pad.(input_image, input_shape, padded_shape)
   |> Evision.Mat.to_nx()
   |> Nx.backend_transfer()
 
-classes =
-  File.read!("#{priv}/yolov8m_classes.json")
-  |> Jason.decode!()
-  |> Enum.with_index()
-  |> Map.new(fn {v, k} -> {k, v} end)
+classes = NxHailo.load_classes(:yolov8m)
 ```
 
 ```elixir
