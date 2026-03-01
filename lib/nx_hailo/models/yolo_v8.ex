@@ -64,13 +64,14 @@ defmodule NxHailo.Parsers.YoloV8 do
     padding_w = div(max_dim - input_width, 2)
 
     Enum.map(detected_objects, fn %NxHailo.Parsers.YoloV8.RawDetectedObject{} = object ->
+	{_c_id, name} = object.class_name
       %NxHailo.Parsers.YoloV8.DetectedObject{
         ymin: remap_coordinate(object.ymin, max_dim, padding_h, input_height),
         ymax: remap_coordinate(object.ymax, max_dim, padding_h, input_height),
         xmin: remap_coordinate(object.xmin, max_dim, padding_w, input_width),
         xmax: remap_coordinate(object.xmax, max_dim, padding_w, input_width),
         score: object.score,
-        class_name: object.class_name,
+        class_name: name,
         class_id: object.class_id
       }
     end)
@@ -100,6 +101,8 @@ defmodule NxHailo.Parsers.YoloV8 do
       class_items
       |> Enum.chunk_every(5)
       |> Enum.map(fn [ymin, xmin, ymax, xmax, score] ->
+		{_c_id,name} =  classes[current_class]
+
         %RawDetectedObject{
           xmin: xmin,
           ymin: ymin,
@@ -107,8 +110,8 @@ defmodule NxHailo.Parsers.YoloV8 do
           ymax: ymax,
           score: score,
           class_id: current_class,
-          class_name: classes[current_class]
-        }
+          class_name: name
+       }
       end)
 
     parse_list(rest, current_class + 1, classes, class_items ++ acc)
