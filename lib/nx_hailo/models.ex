@@ -63,7 +63,7 @@ defmodule NxHailo.Models do
     yolov8m: %{
       hef_url: "#{@zoo8l_base}/yolov8m.hef",
       parser: NxHailo.Parsers.YoloV8,
-      classes_file: "coco_classes.json",
+      classes_file: "yolov8m_classes.json",
       chip: :hailo8l,
       description: "YOLOv8 Medium — balanced speed and accuracy"
     },

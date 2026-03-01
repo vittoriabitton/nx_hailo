@@ -33,10 +33,9 @@ defmodule NxHailo.Parsers.ImageNetClassifier do
       |> Enum.sort_by(fn {score, _idx} -> score end, :desc)
       |> Enum.take(top_k)
       |> Enum.map(fn {score, idx} ->
-		{_id, [_c_id, name]} =  Map.get(classes, idx)
         %Classification{
           class_id: idx,
-          class_name: name,
+          class_name: classes[idx],
           score: score
         }
       end)
