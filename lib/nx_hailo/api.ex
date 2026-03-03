@@ -30,6 +30,16 @@ defmodule NxHailo.API do
   end
 
   @doc """
+  Returns the architecture of the physical Hailo device.
+
+  Returns `{:ok, arch}` where arch is one of:
+  `:hailo8`, `:hailo8l`, `:hailo15h`, `:hailo15m`, `:hailo15l`, `:hailo10h`, `:unknown`.
+  """
+  def get_device_architecture(%VDevice{ref: ref}) do
+    NIF.get_device_architecture(ref)
+  end
+
+  @doc """
   Configures a network group on the given VDevice using a HEF file.
 
   Parameters:

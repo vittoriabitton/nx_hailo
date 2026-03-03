@@ -24,6 +24,7 @@ defmodule NxHailo.NIF do
 
   # NIF functions
   defnif create_vdevice()
+  defnif get_device_architecture(_vdevice_ref)
   defnif load_network_group(_hef_path)
   defnif configure_network_group(_vdevice_ref, _hef_path)
   defnif create_pipeline(_network_group_ref)

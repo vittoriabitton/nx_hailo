@@ -711,7 +711,54 @@ fine::Term infer(ErlNifEnv *env, fine::Term pipeline_term,
   return fine_ok(env, output_map);
 }
 
+// NIF function to get the device architecture from a VDevice
+fine::Term get_device_architecture(ErlNifEnv *env,
+                                    fine::Term vdevice_resource_term) {
+  fine::ResourcePtr<VDeviceResource> vdevice_res;
+  try {
+    vdevice_res = fine::decode<fine::ResourcePtr<VDeviceResource>>(
+        env, vdevice_resource_term);
+  } catch (const std::exception &e) {
+    return fine_error_string(env, "Invalid VDevice resource");
+  }
+
+  auto physical_devices = vdevice_res->vdevice->get_physical_devices();
+  if (!physical_devices) {
+    return fine_error_string(env, "Failed to get physical devices: " +
+                                      std::to_string(physical_devices.status()));
+  }
+
+  if (physical_devices->empty()) {
+    return fine_error_string(env, "No physical devices found");
+  }
+
+  auto &device = physical_devices->at(0).get();
+  auto arch = device.get_architecture();
+  if (!arch) {
+    return fine_error_string(env, "Failed to get device architecture: " +
+                                      std::to_string(arch.status()));
+  }
+
+  switch (arch.value()) {
+  case HAILO_ARCH_HAILO8:
+    return fine_ok(env, fine::Atom("hailo8"));
+  case HAILO_ARCH_HAILO8L:
+    return fine_ok(env, fine::Atom("hailo8l"));
+  case HAILO_ARCH_HAILO15H:
+    return fine_ok(env, fine::Atom("hailo15h"));
+  case HAILO_ARCH_HAILO15M:
+    return fine_ok(env, fine::Atom("hailo15m"));
+  case HAILO_ARCH_HAILO15L:
+    return fine_ok(env, fine::Atom("hailo15l"));
+  case HAILO_ARCH_HAILO10H:
+    return fine_ok(env, fine::Atom("hailo10h"));
+  default:
+    return fine_ok(env, fine::Atom("unknown"));
+  }
+}
+
 // Register NIF functions
+FINE_NIF(get_device_architecture, 1);
 FINE_NIF(load_network_group, 1);
 FINE_NIF(create_pipeline, 1);
 FINE_NIF(get_output_vstream_infos_from_pipeline, 1);
