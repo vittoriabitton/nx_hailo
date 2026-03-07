@@ -1,3 +1,4 @@
 NervesMOTD.print()
-Application.ensure_all_started(:toolshed)
+
+# Add Toolshed helpers to the IEx session
 use Toolshed
