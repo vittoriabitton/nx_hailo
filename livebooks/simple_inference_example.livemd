@@ -2,16 +2,10 @@
 
 ```elixir
 Mix.install([
-  {:nx_hailo, github: "vittoriabitton/nx_hailo"},
+  {:nx_hailo, path: Path.join(__DIR__, "..")},
+  {:evision, "~> 0.2"},
   {:image, "~> 0.54.4"},
   {:kino, "~> 0.14.0"}
-],[
-  config: [
-    nx: [default_backend: EXLA.Backend],
-  ],
-  system_env: %{
-    "XLA_TARGET_PLATFORM"=> "aarch64-linux-gnu"
-  }
 ])
 ```
 
@@ -26,7 +20,7 @@ priv = to_string(:code.priv_dir(:nx_hailo))
 ```
 
 ```elixir
-{:ok, hailo_model} = NxHailo.Hailo.load("#{priv}/yolov8m.hef")
+{:ok, hailo_model} = NxHailo.load("#{priv}/yolov8m.hef")
 ```
 
 ```elixir
@@ -80,7 +74,7 @@ classes =
 
 ```elixir
 {:ok, raw_detected_objects} =
-  NxHailo.Hailo.infer(
+  NxHailo.infer(
     hailo_model,
     %{name => input_tensor},
     NxHailo.Parsers.YoloV8,

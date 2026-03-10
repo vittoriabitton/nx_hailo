@@ -5,7 +5,7 @@ defmodule NxHailo.Parsers.YoloV8 do
   Fields: `N, ymin, xmin, ymax, xmax, score` for each class.
   """
 
-  @behaviour NxHailo.Hailo.OutputParser
+  @behaviour NxHailo.OutputParser
 
   defmodule RawDetectedObject do
     @moduledoc """
@@ -26,7 +26,7 @@ defmodule NxHailo.Parsers.YoloV8 do
     defstruct [:ymin, :ymax, :xmin, :xmax, :score, :class_name, :class_id]
   end
 
-  @impl NxHailo.Hailo.OutputParser
+  @impl NxHailo.OutputParser
   def parse(output_map, opts) when is_list(opts) do
     opts = Keyword.validate!(opts, [:classes, :key])
     key = Keyword.fetch!(opts, :key)

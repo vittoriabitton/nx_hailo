@@ -1,4 +1,4 @@
-defmodule NxHailo.Hailo.API.Pipeline do
+defmodule NxHailo.API.Pipeline do
   @moduledoc """
   Represents an inference pipeline.
   """
@@ -10,7 +10,7 @@ defmodule NxHailo.Hailo.API.Pipeline do
   @type t :: %__MODULE__{
           ref: reference(),
           network_group_ref: reference(),
-          input_vstream_infos: [NxHailo.Hailo.API.VStreamInfo.t()],
-          output_vstream_infos: [NxHailo.Hailo.API.VStreamInfo.t()]
+          input_vstream_infos: [NxHailo.API.VStreamInfo.t()],
+          output_vstream_infos: [NxHailo.API.VStreamInfo.t()]
         }
 end

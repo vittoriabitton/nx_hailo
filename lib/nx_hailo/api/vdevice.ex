@@ -1,4 +1,4 @@
-defmodule NxHailo.Hailo.API.VDevice do
+defmodule NxHailo.API.VDevice do
   @moduledoc """
   Represents a Hailo Virtual Device.
   """

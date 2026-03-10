@@ -1,44 +1,46 @@
 # NxHailo
 
-## Installing in your project
+Elixir library for interfacing with the [Hailo AI accelerator](https://hailo.ai/) via a NIF backed by the HailoRT C++ SDK.
 
-If installing as a Git:
+## Installation
+
+Add `nx_hailo` to your dependencies:
 
 ```elixir
-[
-  {:nx_hailo, github: "vittoriabitton/nx_hailo"}
-]
+# from Hex (when published)
+{:nx_hailo, "~> 0.1"}
+
+# from GitHub
+{:nx_hailo, github: "vittoriabitton/nx_hailo"}
 ```
 
-## Building (macOS via Ubuntu on UTM or Docker)
+## Requirements
 
-- Install elixir and erlang
-- Setup github SSH keys
-- Clone this repository
-- Set the environment variables:
+- `libhailort` version `4.22` must be installed and discoverable on the build host (the NIF links against `-lhailort`)
+  - See the official website for downloads: <https://hailo.ai/developer-zone/software-downloads/>
+  - For compiling on macOS, the suggested setup is to setup a Linux VM with Debian
+  - To burn the firmware from the VM, first build it with the proper `mix firmware --output=<path>` call, copy it to the host OS and then use `fwup -a -i your_firmware.fw -t complete -d <device path>` with the correct firmware filename and device path.
+- Elixir ~> 1.17 / compatible OTP
+
+## Setup
 
 ```shell
-export MIX_TARGET=rpi5
-export XLA_TARGET_PLATFORM=aarch64-linux-gnu
-export EXLA_FORCE_REBUILD=false
-export EVISION_PREFER_PRECOMPILED=true
+mix deps.get
+mix compile
 ```
 
-- `mix deps.get`
-- `mix firmware`
-- If OpenCV fails, go into the Evision deps folder and edit the download scrips to have the --no-check-certificate option
+By default, `mix compile` will download the YOLOv8m model and class labels into `priv/`. To skip this (e.g. in CI or when the models are already present):
 
-- The SD card must either be:
-  - read via an USB reader and mounted to UTM; OR
-  - mounted via the SD card reader on the Macbook and then the device file pointer must be added to the shared directory for UTM
+```shell
+NX_HAILO_DOWNLOAD_MODELS=false mix compile
+```
 
-- `sudo chown $USER:disk <sd card device>` to remove the need for `sudo`
-- `mix burn`
+## Usage
 
-- For `mix upload`, use `mix upload <ip>`, because UTM lives in a different subnet and won't resolve `nerves.local`. Use `ping nerves.local` on the host OS to discover the IP address.
+```elixir
+# Load a model and run inference
+{:ok, model} = NxHailo.load("priv/yolov8m.hef")
+{:ok, results} = NxHailo.run(model, input_tensor)
+```
 
-- To access the device from the host machine, copy over the SSH keys to the host and use `ssh -i <non .pub key path> nerves.local`
-
-# Possible issues
-
-- for some reason evision was seeing i686 target toolchain, so I had to manually link gcc/g++ to the proper aarch64 toolchain. This also included creating gcc-gcc and gcc-g++ links besides gcc and g++ inside the /artifacts/rpi5-portable-0.4.0/host/bin/
+See the `livebooks/` directory for runnable examples.

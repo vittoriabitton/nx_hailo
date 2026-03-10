@@ -1,4 +1,4 @@
-defmodule NxHailo.Hailo.OutputParser do
+defmodule NxHailo.OutputParser do
   @moduledoc """
   Behaviour for parsing Hailo network output.
 

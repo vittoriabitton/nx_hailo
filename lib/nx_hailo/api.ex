@@ -1,12 +1,12 @@
-defmodule NxHailo.Hailo.API do
+defmodule NxHailo.API do
   @moduledoc false
   # Internal API for interacting with Hailo devices.
 
   alias NxHailo.NIF
-  alias NxHailo.Hailo.API.VDevice
-  alias NxHailo.Hailo.API.NetworkGroup
-  alias NxHailo.Hailo.API.Pipeline
-  alias NxHailo.Hailo.API.VStreamInfo
+  alias NxHailo.API.VDevice
+  alias NxHailo.API.NetworkGroup
+  alias NxHailo.API.Pipeline
+  alias NxHailo.API.VStreamInfo
 
   @doc """
   Creates a new Hailo Virtual Device.

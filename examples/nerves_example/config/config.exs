@@ -16,10 +16,7 @@ config :nerves, :firmware, rootfs_overlay: "rootfs_overlay"
 # Set the SOURCE_DATE_EPOCH date for reproducible builds.
 # See https://reproducible-builds.org/docs/source-date-epoch/ for more information
 
-config :nerves, source_date_epoch: "1736510496"
-
-config :nx_hailo,
-  generators: [timestamp_type: :utc_datetime]
+config :nerves, source_date_epoch: "1772923827"
 
 if Mix.target() == :host do
   import_config "host.exs"
