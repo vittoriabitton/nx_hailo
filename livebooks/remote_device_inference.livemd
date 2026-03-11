@@ -2,7 +2,8 @@
 
 ## Introduction
 
-This notebook should be run as an attached node to a Nerves system that has the NxHailo lib installed, as well as the Hailo AI Hat set up.
+This notebook should be run as an attached node to a Nerves project that has the NxHailo lib installed, as well as the Hailo AI Hat set up.
+It is expected that the Nerves project also has Evision, Image and Kino installed.
 
 After having your Nerves app up and running, run the following commands from its shell:
 
