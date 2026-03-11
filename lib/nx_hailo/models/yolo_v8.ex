@@ -28,7 +28,7 @@ defmodule NxHailo.Parsers.YoloV8 do
 
   @impl NxHailo.OutputParser
   def parse(output_map, opts) when is_list(opts) do
-    opts = Keyword.validate!(opts, [:classes, :key])
+    opts = Keyword.validate!(opts, [:classes, :key, :quant_info])
     key = Keyword.fetch!(opts, :key)
     classes = Keyword.fetch!(opts, :classes)
 

@@ -101,7 +101,7 @@ defmodule NxHailo.Models do
       hef_url:
         "https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/v2.17.0/hailo8/resnet_v1_50.hef",
       parser: NxHailo.Parsers.ImageNetClassifier,
-      classes_file: "imagenet_classes.json",
+      classes_file: "imagenet_class_index.json",
       chip: :hailo8,
       description: "ResNet-50 v1 — ImageNet image classification (hailo8)"
     }

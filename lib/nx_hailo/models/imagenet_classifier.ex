@@ -17,15 +17,22 @@ defmodule NxHailo.Parsers.ImageNetClassifier do
 
   @impl NxHailo.Hailo.OutputParser
   def parse(output_map, opts) when is_list(opts) do
-    opts = Keyword.validate!(opts, [:classes, :key, top_k: 5])
+	opts = Keyword.validate!(opts, [:classes, :key, :quant_info, top_k: 5])
     key = Keyword.fetch!(opts, :key)
-    classes = Keyword.fetch!(opts, :classes) |> IO.inspect
+    classes = Keyword.fetch!(opts, :classes)
     top_k = Keyword.fetch!(opts, :top_k)
+    quant_info = Keyword.get(opts, :quant_info)
 
-    scores =
-      for <<x::float-32-little <- Map.fetch!(output_map, key)>> do
-        x
+    raw = Map.fetch!(output_map, key)
+
+    scores = case quant_info do
+        %{qp_zp: zp, qp_scale: scale} ->
+          for <<x::unsigned-8 <- raw>>, do: (x - zp) * scale
+
+        _ ->
+          for <<x::float-32-little <- raw>>, do: x
       end
+
 
     results =
       scores
