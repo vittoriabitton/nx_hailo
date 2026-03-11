@@ -32,7 +32,7 @@ defmodule NxHailo.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:nx, "~> 0.6"},
+      {:nx, "~> 0.11"},
       {:elixir_make, "~> 0.6", runtime: false},
       {:fine, "~> 0.1.0", runtime: false}
     ]
