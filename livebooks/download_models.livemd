@@ -1,0 +1,97 @@
+# Download Hailo Models
+
+```elixir
+Mix.install([
+  {:req, "~> 0.5"},
+  {:yaml_elixir, "~> 2.10"},
+  {:jason, "~> 1.4"}
+])
+```
+
+## Section
+
+This livebook downloads the YOLOv8m compiled model (`.hef`) and generates the COCO class labels
+JSON file into the `nx_hailo` `priv/` directory.
+
+Models are sourced from the [Hailo Model Zoo](https://github.com/hailo-ai/hailo_model_zoo).
+Pre-compiled HEF files for all supported devices are hosted on S3; the URLs follow the pattern:
+
+```
+https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/<version>/<device>/<model>.hef
+```
+
+Browse the model zoo repo to find the version/device/model combination you need.
+
+## Configuration
+
+```elixir
+# Path to the target directory for download
+download_dir = Path.join(__DIR__, "../priv")
+
+# YOLOv8m compiled for Hailo-8L — change version/device/model as needed.
+# Browse https://github.com/hailo-ai/hailo_model_zoo for available models.
+model_hef_url =
+  "https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/v2.15.0/hailo8l/yolov8m.hef"
+
+# COCO dataset YAML from the Ultralytics repo — provides class name mappings.
+dataset_yaml_url =
+  "https://raw.githubusercontent.com/ultralytics/ultralytics/refs/heads/main/ultralytics/cfg/datasets/coco.yaml"
+
+File.mkdir_p!(download_dir)
+```
+
+## Download the HEF model file
+
+```elixir
+defmodule ModelDownloader do
+  def download(url, dest_path) do
+    marker = dest_path <> ".marker"
+
+    if File.exists?(marker) do
+      IO.puts("Already downloaded: #{dest_path} — skipping.")
+    else
+      IO.puts("Downloading #{url} ...")
+      %{headers: headers, body: body} = Req.get!(url)
+
+      if "application/zip" in List.wrap(headers["content-type"]) do
+        for {filename, contents} <- body do
+          File.write!(Path.join(Path.dirname(dest_path), to_string(filename)), contents)
+        end
+      else
+        File.write!(dest_path, body)
+      end
+
+      File.write!(marker, "")
+      IO.puts("Saved to #{dest_path}")
+    end
+  end
+end
+
+ModelDownloader.download(model_hef_url, Path.join(download_dir, "yolov8m.hef"))
+```
+
+## Download and convert dataset class labels
+
+Fetches the COCO YAML, extracts the `names` map, sorts by index, and writes a plain JSON array
+of class names that the inference pipeline expects.
+
+```elixir
+classes_json_path = Path.join(download_dir, "yolov8m_classes.json")
+
+if File.exists?(classes_json_path) do
+  IO.puts("Already exists: #{classes_json_path} — skipping.")
+else
+  IO.puts("Fetching dataset YAML from #{dataset_yaml_url} ...")
+  %{body: yaml_string} = Req.get!(dataset_yaml_url)
+
+  class_list =
+    yaml_string
+    |> YamlElixir.read_from_string!()
+    |> Map.fetch!("names")
+    |> Enum.sort_by(fn {index, _name} -> index end)
+    |> Enum.map(fn {_index, name} -> name end)
+
+  File.write!(classes_json_path, Jason.encode!(class_list))
+  IO.puts("Saved #{length(class_list)} classes to #{classes_json_path}")
+end
+```

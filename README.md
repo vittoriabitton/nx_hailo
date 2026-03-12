@@ -29,11 +29,13 @@ mix deps.get
 mix compile
 ```
 
-By default, `mix compile` will download the YOLOv8m model and class labels into `priv/`. To skip this (e.g. in CI or when the models are already present):
+## Getting Models
 
-```shell
-NX_HAILO_DOWNLOAD_MODELS=false mix compile
-```
+You need to obtain a compiled `.hef` file and place it in `priv/` before running inference.
+
+Pre-compiled HEF files for supported Hailo devices can be found in the [Hailo Model Zoo](https://github.com/hailo-ai/hailo_model_zoo). Look under the `hailo_models/` directory or refer to the S3 URLs referenced in the model zoo configuration files.
+
+For a runnable example that downloads the YOLOv8m model and generates the COCO class labels JSON, see [`livebooks/download_models.livemd`](livebooks/download_models.livemd).
 
 ## Usage
 
