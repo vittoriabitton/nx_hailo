@@ -129,8 +129,8 @@ defmodule NxHailo.MixProject do
 
       contents =
         yaml_contents
-        |> Enum.sort_by(fn {index, _name} -> index end)
-        |> Enum.map(fn {_index, [_cat, name]} -> name end)
+        |> Enum.sort_by(fn {index, _name} -> String.to_integer(index) end)
+        |> Enum.map(fn {index, [_cat, name]} -> name end)
         |> Jason.encode!()
 
       File.write!(filename, contents)
