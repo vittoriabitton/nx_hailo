@@ -19,8 +19,13 @@ defmodule NxHailo do
     - `model_name` (optional): A name to associate with the loaded model.
 
   Returns `{:ok, %NxHailo.Model{}}` or `{:error, reason}`.
+
+  Relative paths like `priv/model.hef` are resolved via `:code.priv_dir/1` so loading
+  works even when the current working directory is not the project root.
   """
   def load(hef_path) when is_binary(hef_path) do
+    hef_path = resolve_hef_path(hef_path)
+
     with {:ok, vdevice} <- API.create_vdevice(),
          {:ok, ng} <- API.configure_network_group(vdevice, hef_path),
          {:ok, pipeline_struct} <- API.create_pipeline(ng) do
@@ -30,6 +35,21 @@ defmodule NxHailo do
       }
 
       {:ok, model}
+    end
+  end
+
+  defp resolve_hef_path(path) when is_binary(path) do
+    path = String.trim(path)
+
+    cond do
+      Path.type(path) == :absolute ->
+        path
+
+      String.starts_with?(path, "priv/") ->
+        Path.join(:code.priv_dir(:nx_hailo), String.replace_prefix(path, "priv/", ""))
+
+      true ->
+        Path.expand(path)
     end
   end
 

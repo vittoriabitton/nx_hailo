@@ -16,10 +16,14 @@ Add `nx_hailo` to your dependencies:
 
 ## Requirements
 
-- `libhailort` version `4.22` must be installed and discoverable on the build host (the NIF links against `-lhailort`)
-  - See the official website for downloads: <https://hailo.ai/developer-zone/software-downloads/>
-  - For compiling on macOS, the suggested setup is to setup a Linux VM with Debian
-  - To burn the firmware from the VM, first build it with the proper `mix firmware --output=<path>` call, copy it to the host OS and then use `fwup -a -i your_firmware.fw -t complete -d <device path>` with the correct firmware filename and device path.
+- **HailoRT** must be installed on the build host (the NIF links against `-lhailort` and includes `hailo/hailort.hpp`):
+  - **Hailo-10 / Hailo-15**: use HailoRT v5 (master branch) from the [hailort repo](https://github.com/hailo-ai/hailort).
+  - **Hailo-8 / 8L / 8R**: use the `hailo8` branch of HailoRT.
+  - See <https://hailo.ai/developer-zone/software-downloads/> for official packages.
+- If the compiler cannot find the HailoRT headers, set the include (and optionally lib) path:
+  - **Environment:** `export HAILORT_INCLUDE_DIR=/path/to/include` (directory that contains a `hailo/` subdir). Optionally `export HAILORT_LIB_DIR=/path/to/lib`.
+  - **Config:** in `config/config.exs`, `config :nx_hailo, :hailort_include_dir, "/path/to/include"` and optionally `:hailort_lib_dir, "/path/to/lib"`.
+- Build target is chosen by `config :nx_hailo, :target, :hailo10` (default) or `:hailo8`; the matching HailoRT branch must be installed.
 - Elixir ~> 1.17 / compatible OTP
 
 ## Setup
