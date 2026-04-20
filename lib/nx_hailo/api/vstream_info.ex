@@ -30,7 +30,7 @@ defmodule NxHailo.API.VStreamInfo do
 
   def from_map(map) when is_map(map) do
     attrs =
-      for key <- Map.keys(%__MODULE__{}), into: %{} do
+      for key <- Map.keys(Map.from_struct(%__MODULE__{})), into: %{} do
         value = Map.get(map, key) || Map.get(map, Atom.to_string(key))
         {key, value}
       end

@@ -580,7 +580,12 @@ fine::Term infer(ErlNifEnv *env, fine::Term pipeline_term,
   return fine_ok(env, output_map);
 }
 
+fine::Term hailo_version(ErlNifEnv *env) {
+  return fine::encode(env, fine::Atom("hailo8"));
+}
+
 // Register NIF functions (same names as v5 so Elixir API is identical)
+FINE_NIF(hailo_version, 0);
 FINE_NIF(create_pipeline, 1);
 FINE_NIF(get_output_vstream_infos_from_pipeline, 1);
 FINE_NIF(infer, 2);

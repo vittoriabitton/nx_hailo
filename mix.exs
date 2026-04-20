@@ -14,7 +14,7 @@ defmodule NxHailo.MixProject do
       aliases: aliases(),
       compilers: [:elixir_make] ++ Mix.compilers(),
       make_env: fn ->
-        target = Application.get_env(:nx_hailo, :target, "hailo10")
+        target = Application.get_env(:nx_hailo, :target) || raise "missing :nx_hailo, :target configuration. Must be one of [\"hailo8\", \"hailo10\"]"
 
         base = %{
           "MIX_BUILD_EMBEDDED" => "#{Mix.Project.config()[:build_embedded]}",
