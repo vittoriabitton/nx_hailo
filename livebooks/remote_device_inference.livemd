@@ -2,16 +2,23 @@
 
 ## Introduction
 
-This notebook should be run as an attached node to a Nerves project that has the NxHailo lib installed, as well as the Hailo AI Hat set up.
-It is expected that the Nerves project also has Evision, Image and Kino installed.
-
-After having your Nerves app up and running, run the following commands from its shell:
-
-1. `cmd "epmd -daemon"`
-2. `Node.start(:"nerves@<IP OF THE DEVICE>")`
-3. `Node.set_cookie(:"nerves-cookie")`
+This notebook should be run as an attached node to a BEAM instance with the libraries below, and the HailoAI Hat set up.
 
 ```elixir
+[
+  {:nx_hailo, "~> 0.1"},
+  {:evision, "~> 0.2"},
+  {:kino, "~> 0.19"}
+]
+```
+
+Ensure the system has `epmd -daemon` running and then start the clustered node:
+
+1. `Node.start(:"mynode@<IP OF THE DEVICE>")`
+2. `Node.set_cookie(:"mynode-cookie")`
+
+```elixir
+# See the download_models livebook for examples on how to download the .hef file
 priv = to_string(:code.priv_dir(:nx_hailo))
 {:ok, hailo_model} = NxHailo.load("#{priv}/yolov8m.hef")
 ```
@@ -296,6 +303,37 @@ defmodule YOLODraw do
 
   def class_color(class_idx) do
     Map.get(@class_colors, class_idx, {255, 0, 0})
+  end
+end
+```
+
+```elixir
+defmodule NxHailo.Video do
+  @moduledoc """
+  Video capture utilities using Evision.
+  """
+
+  @doc """
+  Gets a realtime frame from the given video capture object.
+  """
+  @spec get_realtime_frame(Evision.VideoCapture.t()) :: Evision.Mat.t() | nil
+  def get_realtime_frame(capture) do
+    # Force the buffer size to 1 so that we can easily get
+    # the frame that the camera currently is seeing.
+    Evision.VideoCapture.set(capture, Evision.Constant.cv_CAP_PROP_BUFFERSIZE(), 1)
+
+    # grab/1 will consume the frame without all of the decoding overhead.
+    # retrieve/1 could decode said frame, but seeing that we want to
+    # just drop this one, we can then read the next one (which is
+    # effectively the same as grab+retrieve).
+    case Evision.VideoCapture.grab(capture) do
+      true ->
+        %Evision.Mat{} = mat = Evision.VideoCapture.read(capture)
+        mat
+
+      false ->
+        nil
+    end
   end
 end
 ```
