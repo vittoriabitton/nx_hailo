@@ -26,10 +26,10 @@ Browse the model zoo repo to find the version/device/model combination you need.
 ## Configuration
 
 ```elixir
-# Path to the target directory for download
-# When running via Attached Node, __DIR__ resolves to the local machine path.
-# Set this to the absolute priv/ path on the remote device instead.
-download_dir = "/home/vittoria/nx_hailo/priv"
+# Path to the target directory for download.
+# When running via Attached Node, __DIR__ resolves to the local machine path,
+# so we use the DOWNLOAD_DIR env var set by scripts/start_node.sh instead.
+download_dir = System.get_env("DOWNLOAD_DIR") || to_string(:code.priv_dir(:nx_hailo))
 
 # Model Zoo version (e.g. v2.15.0). Check the repo for the latest.
 version = "v5.1.0"
