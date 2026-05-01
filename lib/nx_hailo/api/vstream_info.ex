@@ -35,6 +35,6 @@ defmodule NxHailo.API.VStreamInfo do
         {key, value}
       end
 
-    struct(__MODULE__, attrs)
+    struct!(__MODULE__, attrs)
   end
 end
