@@ -1,5 +1,6 @@
 # The directory Mix will write compiled artifacts to.
 /_build/
+_build/
 
 # If you run "mix test --cover", coverage assets end up here.
 /cover/
@@ -19,11 +20,8 @@ erl_crash.dump
 # Temporary files, for example, from tests.
 /tmp/
 /cache
-/priv/libnx_hailo.so
-
-/priv/*.json
-/priv/*.hef
+# Downloaded models, generated labels, and compiled NIF artifacts
+/priv/
 hailort.log
-/priv/*.marker
 .envrc
 .env

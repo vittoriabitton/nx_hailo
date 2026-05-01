@@ -18,6 +18,8 @@ config :nerves, :firmware, rootfs_overlay: "rootfs_overlay"
 
 config :nerves, source_date_epoch: "1772923827"
 
+config :nx_hailo, :target, "hailo8"
+
 if Mix.target() == :host do
   import_config "host.exs"
 else

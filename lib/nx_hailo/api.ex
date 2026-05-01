@@ -169,10 +169,10 @@ defmodule NxHailo.API do
           actual_data = input_data[stream_name]
 
           unless is_binary(actual_data) do
-            {:stop, {:error, "Input data for vstream '#{stream_name}' must be a binary."}}
+            {:halt, {:error, "Input data for vstream '#{stream_name}' must be a binary."}}
           else
             if byte_size(actual_data) != expected_size do
-              {:stop,
+              {:halt,
                {:error,
                 "Invalid input data size for vstream '#{stream_name}'. Expected: #{expected_size}, Got: #{byte_size(actual_data)}"}}
             else

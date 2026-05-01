@@ -10,34 +10,47 @@ Mix.install([
 
 ## Section
 
-This livebook downloads the YOLOv8m compiled model (`.hef`) and generates the COCO class labels
+This livebook downloads a compiled model (`.hef`) for **Hailo-8** or **Hailo-10** and generates the COCO class labels
 JSON file into the `nx_hailo` `priv/` directory.
 
 Models are sourced from the [Hailo Model Zoo](https://github.com/hailo-ai/hailo_model_zoo).
-Pre-compiled HEF files for all supported devices are hosted on S3; the URLs follow the pattern:
+Pre-compiled HEF files are hosted on S3; the URLs follow the pattern:
 
 ```
 https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/<version>/<device>/<model>.hef
 ```
 
+Supported `device` values include: `hailo8`, `hailo8l`, `hailo8r` (Hailo-8 family), and `hailo10` (Hailo-10).
 Browse the model zoo repo to find the version/device/model combination you need.
 
 ## Configuration
 
 ```elixir
-# Path to the target directory for download
-download_dir = Path.join(__DIR__, "../priv")
+# Path to the target directory for download.
+# When running via Attached Node, __DIR__ resolves to the local machine path,
+# so we use the DOWNLOAD_DIR env var set by scripts/start_node.sh instead.
+download_dir = System.get_env("DOWNLOAD_DIR") || to_string(:code.priv_dir(:nx_hailo))
 
-# YOLOv8m compiled for Hailo-8L — change version/device/model as needed.
-# Browse https://github.com/hailo-ai/hailo_model_zoo for available models.
+# Model Zoo version (e.g. v2.15.0). Check the repo for the latest.
+version = "v5.1.0"
+
+# Device: "hailo8" | "hailo8l" | "hailo8r" (Hailo-8 family) or "hailo10h" (Hailo-10H)
+device = "hailo10h"
+
+# Model name (no .hef). Examples: "yolov8m", "yolov8s", "yolov5m"
+model_name = "yolov8m"
+
+# Build the HEF URL from version, device, and model
 model_hef_url =
-  "https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/v2.15.0/hailo8l/yolov8m.hef"
+  "https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/#{version}/#{device}/#{model_name}.hef"
 
-# COCO dataset YAML from the Ultralytics repo — provides class name mappings.
+# COCO dataset YAML from the Ultralytics repo — provides class name mappings (for YOLO COCO models).
 dataset_yaml_url =
   "https://raw.githubusercontent.com/ultralytics/ultralytics/refs/heads/main/ultralytics/cfg/datasets/coco.yaml"
 
 File.mkdir_p!(download_dir)
+
+IO.puts("Will download: #{model_name}.hef for #{device}")
 ```
 
 ## Download the HEF model file
@@ -67,7 +80,7 @@ defmodule ModelDownloader do
   end
 end
 
-ModelDownloader.download(model_hef_url, Path.join(download_dir, "yolov8m.hef"))
+ModelDownloader.download(model_hef_url, Path.join(download_dir, "#{model_name}.hef"))
 ```
 
 ## Download and convert dataset class labels
@@ -76,7 +89,7 @@ Fetches the COCO YAML, extracts the `names` map, sorts by index, and writes a pl
 of class names that the inference pipeline expects.
 
 ```elixir
-classes_json_path = Path.join(download_dir, "yolov8m_classes.json")
+classes_json_path = Path.join(download_dir, "#{model_name}_classes.json")
 
 if File.exists?(classes_json_path) do
   IO.puts("Already exists: #{classes_json_path} — skipping.")
