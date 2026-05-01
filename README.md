@@ -24,7 +24,7 @@ Add `nx_hailo` to your dependencies:
   - **Environment:** `export HAILORT_INCLUDE_DIR=/path/to/include` (directory that contains a `hailo/` subdir). Optionally `export HAILORT_LIB_DIR=/path/to/lib`.
   - **Config:** in `config/config.exs`, `config :nx_hailo, :hailort_include_dir, "/path/to/include"` and optionally `:hailort_lib_dir, "/path/to/lib"`.
 - Build target is chosen by `config :nx_hailo, :target, :hailo10` (default) or `:hailo8`; the matching HailoRT branch must be installed.
-- Elixir ~> 1.17 / compatible OTP
+- Elixir ~> 1.18 / compatible OTP
 
 ## Setup
 
