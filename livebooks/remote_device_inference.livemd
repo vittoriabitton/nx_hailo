@@ -7,7 +7,7 @@ This notebook runs inference on a Hailo device via Livebook's **Attached Node** 
 **Start the node on the device:**
 
 ```shell
-./scripts/start_node.sh
+./scripts/start_node.exs
 ```
 
 Then in Livebook go to **Runtime → Attached Node** and enter the node name and cookie printed by the script.

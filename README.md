@@ -54,28 +54,29 @@ The livebooks in `livebooks/` are designed to run against an Elixir node on the 
 ### 1. Start the node on the device
 
 ```shell
-./scripts/start_node.sh
+./scripts/start_node.exs
 # or pass the device IP explicitly:
-./scripts/start_node.sh 192.168.2.4
+./scripts/start_node.exs --node-ip 192.168.2.4
 ```
 
-The script auto-detects the IP from `eth0` (assumes the device is connected via Ethernet). If using Wi-Fi or a different interface, pass the IP explicitly as an argument.
+The script auto-detects the IP from `eth0` (assumes the device is connected via Ethernet). If using Wi-Fi or a different interface, pass the IP explicitly as an option.
 
-**Environment variables (optional overrides):**
+**Options:**
 
-| Variable | Default | Description |
+| Option | Default | Description |
 |---|---|---|
-| `NODE_NAME` | `<whoami>@<eth0-ip>` | Full Erlang node name |
-| `COOKIE` | node base name (part before `@`) | Erlang cookie |
-| `HAILO_TARGET` | `hailo10` | Target device: `hailo10`, `hailo8`, `hailo8l`, etc. |
-| `DOWNLOAD_DIR` | `<project>/priv` | Where downloaded models are saved |
+| `--node-ip` | `<eth0-ip>` | Node IP |
+| `--node-name` | `<whoami>@<node-ip>` | Full Erlang node name |
+| `--cookie` | node base name (part before `@`) | Erlang cookie |
+| `--hailo-target` | `hailo10` | Target device: `hailo10`, `hailo8`, `hailo8l`, etc. |
+| `--download-dir` | `<project>/priv` | Where downloaded models are saved |
 
 ### 2. Connect Livebook
 
 Open Livebook on your machine, then for the notebook go to **Runtime → Attached Node** and enter:
 
 - **Node:** `user@<device-ip>` (printed by the script)
-- **Cookie:** `cookie`
+- **Cookie:** the cookie printed by the script
 
 ### 3. Run the livebooks
 
