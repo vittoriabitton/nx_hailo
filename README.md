@@ -35,11 +35,52 @@ mix compile
 
 ## Getting Models
 
-You need to obtain a compiled `.hef` file and place it in `priv/` before running inference.
+You need a compiled `.hef` file in `priv/` before running inference.
 
-Pre-compiled HEF files for supported Hailo devices can be found in the [Hailo Model Zoo](https://github.com/hailo-ai/hailo_model_zoo). Look under the `hailo_models/` directory or refer to the S3 URLs referenced in the model zoo configuration files.
+Pre-compiled HEF files for supported Hailo devices are available in the [Hailo Model Zoo](https://github.com/hailo-ai/hailo_model_zoo). The S3 URL pattern is:
+
+```
+https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/<version>/<device>/<model>.hef
+```
+
+Use the model zoo version matching your HailoRT version (`hailortcli --version`). For Hailo-10H with HailoRT 5.x, use `version=v5.x.x` and `device=hailo10h`.
 
 For a runnable example that downloads the YOLOv8m model and generates the COCO class labels JSON, see [`livebooks/download_models.livemd`](livebooks/download_models.livemd).
+
+## Running Livebooks
+
+The livebooks in `livebooks/` are designed to run against an Elixir node on the device with the Hailo hardware. Use Livebook's **Attached Node** runtime to connect your local Livebook instance to the device.
+
+### 1. Start the node on the device
+
+```shell
+./scripts/start_node.sh
+# or pass the device IP explicitly:
+./scripts/start_node.sh 192.168.2.4
+```
+
+The script auto-detects the IP from `eth0` (assumes the device is connected via Ethernet). If using Wi-Fi or a different interface, pass the IP explicitly as an argument.
+
+**Environment variables (optional overrides):**
+
+| Variable | Default | Description |
+|---|---|---|
+| `NODE_NAME` | `<whoami>@<eth0-ip>` | Full Erlang node name |
+| `COOKIE` | node base name (part before `@`) | Erlang cookie |
+| `HAILO_TARGET` | `hailo10` | Target device: `hailo10`, `hailo8`, `hailo8l`, etc. |
+| `DOWNLOAD_DIR` | `<project>/priv` | Where downloaded models are saved |
+
+### 2. Connect Livebook
+
+Open Livebook on your machine, then for the notebook go to **Runtime → Attached Node** and enter:
+
+- **Node:** `user@<device-ip>` (printed by the script)
+- **Cookie:** `cookie`
+
+### 3. Run the livebooks
+
+- [`livebooks/download_models.livemd`](livebooks/download_models.livemd) — downloads a `.hef` model and COCO class labels to `priv/`
+- [`livebooks/remote_device_inference.livemd`](livebooks/remote_device_inference.livemd) — runs YOLOv8 inference using the camera
 
 ## Usage
 
@@ -48,5 +89,3 @@ For a runnable example that downloads the YOLOv8m model and generates the COCO c
 {:ok, model} = NxHailo.load("priv/yolov8m.hef")
 {:ok, results} = NxHailo.run(model, input_tensor)
 ```
-
-See the `livebooks/` directory for runnable examples.

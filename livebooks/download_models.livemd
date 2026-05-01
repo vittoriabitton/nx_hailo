@@ -26,14 +26,16 @@ Browse the model zoo repo to find the version/device/model combination you need.
 ## Configuration
 
 ```elixir
-# Path to the target directory for download
-download_dir = Path.join(__DIR__, "../priv")
+# Path to the target directory for download.
+# When running via Attached Node, __DIR__ resolves to the local machine path,
+# so we use the DOWNLOAD_DIR env var set by scripts/start_node.sh instead.
+download_dir = System.get_env("DOWNLOAD_DIR") || to_string(:code.priv_dir(:nx_hailo))
 
 # Model Zoo version (e.g. v2.15.0). Check the repo for the latest.
-version = "v2.15.0"
+version = "v5.1.0"
 
-# Device: "hailo8" | "hailo8l" | "hailo8r" (Hailo-8 family) or "hailo10" (Hailo-10)
-device = "hailo10"
+# Device: "hailo8" | "hailo8l" | "hailo8r" (Hailo-8 family) or "hailo10h" (Hailo-10H)
+device = "hailo10h"
 
 # Model name (no .hef). Examples: "yolov8m", "yolov8s", "yolov5m"
 model_name = "yolov8m"
