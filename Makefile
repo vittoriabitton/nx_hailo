@@ -2,8 +2,8 @@
 #   ERTS_INCLUDE_DIR, MIX_APP_PATH, FINE_INCLUDE_DIR, HAILO_TARGET
 #   HAILORT_INCLUDE_DIR, HAILORT_LIB_DIR (optional, for finding HailoRT headers/libs)
 # HAILO_TARGET = hailo10 (default) or hailo8
-#   hailo10 -> c_src/nx_hailo_v5.cpp    (HailoRT v5 / InferModel)
-#   hailo8  -> c_src/nx_hailo_hailo8.cpp (HailoRT hailo8 branch / VDevice)
+#   hailo10 -> c_src/hailo10.cpp (HailoRT v5 / InferModel)
+#   hailo8  -> c_src/hailo8.cpp  (HailoRT hailo8 branch / VDevice)
 #
 # HailoRT must be installed. If not in default search paths, set:
 #   HAILORT_INCLUDE_DIR = directory containing "hailo/" (e.g. /usr/local/include or <sdk>/include)
@@ -16,9 +16,9 @@ PRIV_DIR = $(MIX_APP_PATH)/priv
 NIF_SO_NAME = libnx_hailo.so
 
 ifeq ($(HAILO_TARGET),hailo8)
-  NIF_SOURCE = $(NX_HAILO_DIR)/nx_hailo_hailo8.cpp
+  NIF_SOURCE = $(NX_HAILO_DIR)/hailo8.cpp
 else
-  NIF_SOURCE = $(NX_HAILO_DIR)/nx_hailo_v5.cpp
+  NIF_SOURCE = $(NX_HAILO_DIR)/hailo10.cpp
 endif
 
 HAILORT_LDFLAGS = -lhailort

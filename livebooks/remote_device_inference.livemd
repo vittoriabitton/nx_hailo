@@ -1,357 +1,248 @@
-# HailoAI Remote Demo
+# HailoAI Remote Inference
 
-## Introduction
+## Setup
 
-This notebook should be run as an attached node to a BEAM instance with the libraries below, and the HailoAI Hat set up.
+This notebook runs inference on a Hailo device via Livebook's **Attached Node** runtime. The node must be running on the device before connecting.
 
-```elixir
-[
-  {:nx_hailo, "~> 0.1"},
-  {:evision, "~> 0.2"},
-  {:kino, "~> 0.19"}
-]
+**Start the node on the device:**
+
+```shell
+./scripts/start_node.sh
 ```
 
-Ensure the system has `epmd -daemon` running and then start the clustered node:
+Then in Livebook go to **Runtime → Attached Node** and enter the node name and cookie printed by the script.
 
-1. `Node.start(:"mynode@<IP OF THE DEVICE>")`
-2. `Node.set_cookie(:"mynode-cookie")`
+> See `livebooks/download_models.livemd` to download a `.hef` model file before running inference.
+
+## Load Model
 
 ```elixir
-# See the download_models livebook for examples on how to download the .hef file
 priv = to_string(:code.priv_dir(:nx_hailo))
 {:ok, hailo_model} = NxHailo.load("#{priv}/yolov8m.hef")
+
+[%{name: name}] = hailo_model.pipeline.input_vstream_infos
+[%{name: output_key}] = hailo_model.pipeline.output_vstream_infos
+
+:ok
 ```
 
-```elixir
-find_working_cap = fn ->
-    device_names = Path.wildcard("/dev/video*")
+## Image Preprocessing
 
-    Enum.find_value(device_names, fn device ->
-      cap = Evision.VideoCapture.videoCapture(device)
-
-      cond do
-        not Evision.VideoCapture.isOpened(cap) ->
-          Evision.VideoCapture.release(cap)
-          false
-
-        not Evision.VideoCapture.grab(cap) ->
-          Evision.VideoCapture.release(cap)
-          false
-
-        true ->
-          {cap, device}
-      end
-    end)
-  end
-```
+Resizes and letterbox-pads an image to the model's square input size (640×640 for YOLOv8), filling borders with neutral grey.
 
 ```elixir
-{capture, device} = find_working_cap.()
-```
-
-```elixir
- evision_resize_and_pad =
-   fn image, {h, w}, {target_h, target_h} = target_shape ->
-     # target_h and target_w should be the same for yolov8
+evision_resize_and_pad =
+  fn image, {h, w}, {target_size, target_size} ->
     size = max(h, w)
     pad_h = div(size - h, 2)
     pad_w = div(size - w, 2)
 
-    pad_h_extra = rem(size - h, 2)
-    pad_w_extra = rem(size - w, 2)
+    padded =
+      Evision.copyMakeBorder(
+        image,
+        pad_h,
+        pad_h + rem(size - h, 2),
+        pad_w,
+        pad_w + rem(size - w, 2),
+        Evision.Constant.cv_BORDER_CONSTANT(),
+        value: {114, 114, 114}
+      )
 
-    # pad to a square
-    padded = Evision.copyMakeBorder(
-      image,
-      pad_h,
-      pad_h + pad_h_extra,
-      pad_w,
-      pad_w + pad_w_extra,
-      Evision.Constant.cv_BORDER_CONSTANT(),
-      value: {114, 114, 114}
-    )
-
-     Evision.resize(padded, target_shape)
+    Evision.resize(padded, {target_size, target_size})
   end
 ```
 
-```elixir
-input_shape = {trunc(capture.frame_height), trunc(capture.frame_width)}
-padded_shape = {640, 640}
-classes =
-  File.read!("#{priv}/yolov8m_classes.json")
-  |> Jason.decode!()
-  |> Enum.with_index()
-  |> Map.new(fn {v, k} -> {k, v} end)
+## Drawing Utilities
 
-
-[%{name: name, shape: model_shape}] = hailo_model.pipeline.input_vstream_infos
-[%{name: output_key}] = hailo_model.pipeline.output_vstream_infos
-```
+Draws bounding boxes and confidence labels on a frame.
 
 ```elixir
 defmodule YOLODraw do
+  @font_face Evision.Constant.cv_FONT_HERSHEY_SIMPLEX()
   @font_size 0.5
   @stroke_width 2
-  @font_face Evision.Constant.cv_FONT_HERSHEY_SIMPLEX()
   @text_padding 5
 
   def draw_detected_objects(mat, detected_objects, fps_label) do
-    # Note: Evision shape is {h, w, c}
-    {full_height, full_width, _channels} = Evision.Mat.shape(mat)
+    {full_height, full_width, _} = Evision.Mat.shape(mat)
 
-    # FPS Label
-    # White
-    fps_text_color = {255, 255, 255}
-    # Blue (BGR)
-    fps_bg_color = {255, 0, 0}
+    mat = draw_fps(mat, fps_label, full_width, full_height)
+    mat = Enum.reduce(detected_objects, mat, &draw_box(&2, &1))
+    Enum.reduce(detected_objects, mat, &draw_label(&2, &1))
+  end
 
-    {{fps_text_width, fps_text_height}, _baseline} =
-      Evision.getTextSize(fps_label, @font_face, 0.7, 1)
+  defp draw_fps(mat, label, w, h) do
+    {{tw, th}, _} = Evision.getTextSize(label, @font_face, 0.7, 1)
+    bg_w = tw + 2 * @text_padding
+    bg_h = th + 2 * @text_padding
 
-    fps_bg_width = fps_text_width + 2 * @text_padding
-    fps_bg_height = fps_text_height + 2 * @text_padding
+    mat
+    |> Evision.rectangle({w - bg_w, h - bg_h}, {w, h}, {255, 0, 0}, thickness: -1)
+    |> Evision.putText(label, {w - bg_w + @text_padding, h - @text_padding},
+      @font_face, 0.7, {255, 255, 255},
+      thickness: 1, lineType: Evision.Constant.cv_LINE_AA()
+    )
+  end
 
-    fps_bg_tl = {full_width - fps_bg_width, full_height - fps_bg_height}
-    fps_bg_br = {full_width, full_height}
-    # -1 for filled
-    mat = Evision.rectangle(mat, fps_bg_tl, fps_bg_br, fps_bg_color, thickness: -1)
+  defp draw_box(mat, obj) do
+    Evision.rectangle(
+      mat,
+      {obj.xmin, obj.ymin},
+      {obj.xmax, obj.ymax},
+      class_color(obj.class_id),
+      thickness: @stroke_width
+    )
+  end
 
-    # bottom-left
-    fps_text_org = {full_width - fps_bg_width + @text_padding, full_height - @text_padding}
+  defp draw_label(mat, obj) do
+    label = "#{obj.class_name} #{round(obj.score * 100)}%"
+    {{tw, th}, baseline} = Evision.getTextSize(label, @font_face, @font_size, 1)
 
-    mat =
-      Evision.putText(mat, fps_label, fps_text_org, @font_face, 0.7, fps_text_color,
-        thickness: 1,
-        lineType: Evision.Constant.cv_LINE_AA()
-      )
+    bg_tl = {obj.xmin, max(obj.ymin - th - 2 * @text_padding - baseline, 0)}
+    bg_br = {obj.xmin + tw + 2 * @text_padding, max(obj.ymin - baseline, 0)}
 
-    mat =
-      Enum.reduce(detected_objects, mat, fn %NxHailo.Parsers.YoloV8.DetectedObject{} = obj,
-                                            current_mat ->
-        left = obj.xmin
-        top = obj.ymin
-
-        width = obj.xmax - obj.xmin
-        height = obj.ymax - obj.ymin
-
-        bgr_color = class_color(obj.class_id)
-
-        # Draw bounding box
-        pt1 = {left, top}
-        pt2 = {left + width, top + height}
-
-        Evision.rectangle(current_mat, pt1, pt2, bgr_color, thickness: @stroke_width)
-      end)
-
-    Enum.reduce(detected_objects, mat, fn %NxHailo.Parsers.YoloV8.DetectedObject{} = obj, mat ->
-      left = obj.xmin
-      top = obj.ymin
-
-      width = obj.xmax - obj.xmin
-      height = obj.ymax - obj.ymin
-
-      prob = round(obj.score * 100)
-
-      # White
-      text_color = {255, 255, 255}
-      # Black
-      text_bg_color = {0, 0, 0}
-
-      label = "#{obj.class_name} #{prob}%"
-      {{text_w, text_h}, baseline} = Evision.getTextSize(label, @font_face, @font_size, 1)
-
-      # Text background
-      text_bg_tl_x = left
-      text_bg_tl_y = max(top - text_h - 2 * @text_padding - baseline, 0)
-      text_bg_br_x = left + text_w + 2 * @text_padding
-      # text_bg_tl_y + text_h + 2 * @text_padding
-      text_bg_br_y = max(top - baseline, 0)
-
-      mat_with_text_bg =
-        Evision.rectangle(
-          mat,
-          {text_bg_tl_x, text_bg_tl_y},
-          {text_bg_br_x, text_bg_br_y},
-          text_bg_color,
-          thickness: -1
-        )
-
-      # Text itself
-      text_org_x = left + @text_padding
-      # Ensure text is placed on its background
-      text_org_y = max(top - @text_padding - baseline, text_h + @text_padding)
-
-      Evision.putText(
-        mat_with_text_bg,
-        label,
-        {text_org_x, text_org_y},
-        @font_face,
-        @font_size,
-        text_color,
-        thickness: 1,
-        lineType: Evision.Constant.cv_LINE_AA()
-      )
-    end)
+    mat
+    |> Evision.rectangle(bg_tl, bg_br, {0, 0, 0}, thickness: -1)
+    |> Evision.putText(
+      label,
+      {obj.xmin + @text_padding, max(obj.ymin - @text_padding - baseline, th + @text_padding)},
+      @font_face, @font_size, {255, 255, 255},
+      thickness: 1, lineType: Evision.Constant.cv_LINE_AA()
+    )
   end
 
   hex_to_bgr = fn hex ->
     hex
     |> String.replace_prefix("#", "")
     |> String.to_integer(16)
-    |> then(fn color ->
-      b = Bitwise.band(color, 0xFF)
-      g = Bitwise.band(Bitwise.bsr(color, 8), 0xFF)
-      r = Bitwise.band(Bitwise.bsr(color, 16), 0xFF)
-      {b, g, r}
+    |> then(fn c ->
+      {Bitwise.band(c, 0xFF), Bitwise.band(Bitwise.bsr(c, 8), 0xFF), Bitwise.band(Bitwise.bsr(c, 16), 0xFF)}
     end)
   end
 
   @class_colors [
-                  "#FF0000",
-                  "#00FF00",
-                  "#0000FF",
-                  "#FFFF00",
-                  "#FF00FF",
-                  "#00FFFF",
-                  "#800000",
-                  "#008000",
-                  "#000080",
-                  "#FF00FF",
-                  "#800080",
-                  "#008080",
-                  "#C0C0C0",
-                  "#FFA500",
-                  "#A52A2A",
-                  "#8A2BE2",
-                  "#5F9EA0",
-                  "#7FFF00",
-                  "#D2691E",
-                  "#FF7F50",
-                  "#6495ED",
-                  "#DC143C",
-                  "#00FFFF",
-                  "#00008B",
-                  "#008B8B",
-                  "#B8860B",
-                  "#A9A9A9",
-                  "#006400",
-                  "#BDB76B",
-                  "#8B008B",
-                  "#556B2F",
-                  "#FF8C00",
-                  "#9932CC",
-                  "#8B0000",
-                  "#E9967A",
-                  "#8FBC8F",
-                  "#483D8B",
-                  "#2F4F4F",
-                  "#00CED1",
-                  "#9400D3",
-                  "#FF1493",
-                  "#00BFFF",
-                  "#696969",
-                  "#1E90FF",
-                  "#B22222",
-                  "#FFFAF0",
-                  "#228B22",
-                  "#FF00FF",
-                  "#DCDCDC",
-                  "#F8F8FF",
-                  "#FFD700",
-                  "#DAA520",
-                  "#808080",
-                  "#ADFF2F",
-                  "#F0FFF0",
-                  "#FF69B4",
-                  "#CD5C5C",
-                  "#4B0082",
-                  "#FFFFF0",
-                  "#F0E68C",
-                  "#E6E6FA",
-                  "#FFF0F5",
-                  "#7CFC00",
-                  "#FFFACD",
-                  "#ADD8E6",
-                  "#F08080",
-                  "#E0FFFF",
-                  "#FAFAD2",
-                  "#D3D3D3",
-                  "#90EE90",
-                  "#FFB6C1",
-                  "#FFA07A",
-                  "#20B2AA",
-                  "#87CEFA",
-                  "#778899",
-                  "#B0C4DE",
-                  "#FFFFE0",
-                  "#00FF7F",
-                  "#4682B4",
-                  "#D2B48C",
-                  "#008080",
-                  "#D8BFD8",
-                  "#FF6347",
-                  "#40E0D0",
-                  "#EE82EE",
-                  "#F5DEB3",
-                  "#FFFFFF",
-                  "#F5F5F5"
-                ]
-                |> Enum.with_index(&{&2, hex_to_bgr.(&1)})
-                |> Map.new()
+    "#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF", "#00FFFF",
+    "#800000", "#008000", "#000080", "#FF00FF", "#800080", "#008080",
+    "#C0C0C0", "#FFA500", "#A52A2A", "#8A2BE2", "#5F9EA0", "#7FFF00",
+    "#D2691E", "#FF7F50", "#6495ED", "#DC143C", "#00FFFF", "#00008B",
+    "#008B8B", "#B8860B", "#A9A9A9", "#006400", "#BDB76B", "#8B008B",
+    "#556B2F", "#FF8C00", "#9932CC", "#8B0000", "#E9967A", "#8FBC8F",
+    "#483D8B", "#2F4F4F", "#00CED1", "#9400D3", "#FF1493", "#00BFFF",
+    "#696969", "#1E90FF", "#B22222", "#FFFAF0", "#228B22", "#FF00FF",
+    "#DCDCDC", "#F8F8FF", "#FFD700", "#DAA520", "#808080", "#ADFF2F",
+    "#F0FFF0", "#FF69B4", "#CD5C5C", "#4B0082", "#FFFFF0", "#F0E68C",
+    "#E6E6FA", "#FFF0F5", "#7CFC00", "#FFFACD", "#ADD8E6", "#F08080",
+    "#E0FFFF", "#FAFAD2", "#D3D3D3", "#90EE90", "#FFB6C1", "#FFA07A",
+    "#20B2AA", "#87CEFA", "#778899", "#B0C4DE", "#FFFFE0", "#00FF7F",
+    "#4682B4", "#D2B48C", "#008080", "#D8BFD8", "#FF6347", "#40E0D0",
+    "#EE82EE", "#F5DEB3", "#FFFFFF", "#F5F5F5"
+  ]
+  |> Enum.with_index(&{&2, hex_to_bgr.(&1)})
+  |> Map.new()
 
-  def class_color(class_idx) do
-    Map.get(@class_colors, class_idx, {255, 0, 0})
-  end
+  def class_color(class_idx), do: Map.get(@class_colors, class_idx, {255, 0, 0})
+end
+```
+
+## Camera Setup
+
+Choose **one** of the sections below depending on your camera type, then proceed to the Inference section.
+
+### Option A — Standard V4L2 Camera
+
+Use this for USB webcams or any camera accessible via `/dev/video*`.
+
+```elixir
+find_working_cap = fn ->
+  Enum.find_value(Path.wildcard("/dev/video*"), fn device ->
+    cap = Evision.VideoCapture.videoCapture(device)
+
+    cond do
+      not Evision.VideoCapture.isOpened(cap) ->
+        Evision.VideoCapture.release(cap)
+        false
+
+      not Evision.VideoCapture.grab(cap) ->
+        Evision.VideoCapture.release(cap)
+        false
+
+      true ->
+        {cap, device}
+    end
+  end)
 end
 ```
 
 ```elixir
-defmodule NxHailo.Video do
-  @moduledoc """
-  Video capture utilities using Evision.
-  """
+{capture, device} = find_working_cap.()
+IO.puts("Using camera: #{device}")
 
-  @doc """
-  Gets a realtime frame from the given video capture object.
-  """
-  @spec get_realtime_frame(Evision.VideoCapture.t()) :: Evision.Mat.t() | nil
-  def get_realtime_frame(capture) do
-    # Force the buffer size to 1 so that we can easily get
-    # the frame that the camera currently is seeing.
-    Evision.VideoCapture.set(capture, Evision.Constant.cv_CAP_PROP_BUFFERSIZE(), 1)
-
-    # grab/1 will consume the frame without all of the decoding overhead.
-    # retrieve/1 could decode said frame, but seeing that we want to
-    # just drop this one, we can then read the next one (which is
-    # effectively the same as grab+retrieve).
-    case Evision.VideoCapture.grab(capture) do
-      true ->
-        %Evision.Mat{} = mat = Evision.VideoCapture.read(capture)
-        mat
-
-      false ->
-        nil
-    end
-  end
+capture_frame = fn ->
+  Evision.VideoCapture.set(capture, Evision.Constant.cv_CAP_PROP_BUFFERSIZE(), 1)
+  true = Evision.VideoCapture.grab(capture)
+  Evision.VideoCapture.read(capture)
 end
+
+sample_frame = capture_frame.()
+{frame_h, frame_w, _} = Evision.Mat.shape(sample_frame)
+input_shape = {frame_h, frame_w}
+```
+
+### Option B — Raspberry Pi Camera (PiCam3 / libcamera)
+
+The Pi Camera uses `libcamera` and is not directly accessible via OpenCV's V4L2 backend.
+Instead, run `rpicam-still` in timelapse mode on the device (in a separate terminal) to
+continuously write frames to a temp file, then read that file here.
+
+**Start the camera on the device (separate terminal):**
+
+```shell
+rpicam-still --nopreview -t 0 --timelapse 50 --width 640 --height 480 \
+  -o /tmp/frame.jpg 2>/dev/null &
+```
+
+Then run this cell:
+
+```elixir
+capture_frame = fn ->
+  Evision.imread("/tmp/frame.jpg", flags: Evision.Constant.cv_IMREAD_COLOR())
+end
+
+sample_frame = capture_frame.()
+{frame_h, frame_w, _} = Evision.Mat.shape(sample_frame)
+input_shape = {frame_h, frame_w}
+
+IO.puts("Frame size: #{frame_w}×#{frame_h}")
+```
+
+## Inference
+
+Loads class labels, then runs YOLOv8 inference on each frame and renders the annotated result.
+
+```elixir
+padded_shape = {640, 640}
+
+classes =
+  File.read!("#{priv}/yolov8m_classes.json")
+  |> Jason.decode!()
+  |> Enum.with_index()
+  |> Map.new(fn {v, k} -> {k, v} end)
 ```
 
 ```elixir
 fps = div(1000, 50)
 
 Kino.animate(fps, fn _ ->
-  input_image = NxHailo.Video.get_realtime_frame(capture)
+  input_image = capture_frame.()
   padded_image = evision_resize_and_pad.(input_image, input_shape, padded_shape)
 
-  %{type: {:u, 8}} =
-    input_tensor =
+  input_tensor =
     padded_image
     |> Evision.Mat.to_nx()
+    |> Nx.reshape({640, 640, 3})
     |> Nx.backend_transfer()
 
-  {:ok, raw_detected_objects} =
+  {:ok, raw_objects} =
     NxHailo.infer(
       hailo_model,
       %{name => input_tensor},
@@ -361,8 +252,8 @@ Kino.animate(fps, fn _ ->
     )
 
   detected_objects =
-    raw_detected_objects
-    |> Enum.reject(&(&1.score < 0.0))
+    raw_objects
+    |> Enum.reject(&(&1.score < 0.5))
     |> NxHailo.Parsers.YoloV8.postprocess(input_shape)
 
   YOLODraw.draw_detected_objects(input_image, detected_objects, "FPS: #{1000 / fps}")

@@ -27,13 +27,15 @@ Browse the model zoo repo to find the version/device/model combination you need.
 
 ```elixir
 # Path to the target directory for download
-download_dir = Path.join(__DIR__, "../priv")
+# When running via Attached Node, __DIR__ resolves to the local machine path.
+# Set this to the absolute priv/ path on the remote device instead.
+download_dir = "/home/vittoria/nx_hailo/priv"
 
 # Model Zoo version (e.g. v2.15.0). Check the repo for the latest.
-version = "v2.15.0"
+version = "v5.1.0"
 
-# Device: "hailo8" | "hailo8l" | "hailo8r" (Hailo-8 family) or "hailo10" (Hailo-10)
-device = "hailo10"
+# Device: "hailo8" | "hailo8l" | "hailo8r" (Hailo-8 family) or "hailo10h" (Hailo-10H)
+device = "hailo10h"
 
 # Model name (no .hef). Examples: "yolov8m", "yolov8s", "yolov5m"
 model_name = "yolov8m"
