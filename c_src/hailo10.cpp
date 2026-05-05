@@ -387,12 +387,7 @@ fine::Term configure_network_group_opts(ErlNifEnv *env,
 
   // Apply scheduler_timeout_ms post-configure
   if (enif_get_map_value(env, opts_term, fine::encode(env, fine::Atom("scheduler_timeout_ms")), &val)) {
-    uint64_t timeout_ms;
-    try {
-      timeout_ms = fine::decode<uint64_t>(env, fine::Term(val));
-    } catch (...) {
-      return fine_error_string(env, "Invalid scheduler_timeout_ms value");
-    }
+    uint64_t timeout_ms = fine::decode<uint64_t>(env, fine::Term(val));
     hailo_status s = configured_model->set_scheduler_timeout(std::chrono::milliseconds(timeout_ms));
     if (s != HAILO_SUCCESS)
       return fine_error_string(env, "Failed to set scheduler timeout: " + std::to_string(s));
@@ -400,12 +395,7 @@ fine::Term configure_network_group_opts(ErlNifEnv *env,
 
   // Apply scheduler_threshold post-configure
   if (enif_get_map_value(env, opts_term, fine::encode(env, fine::Atom("scheduler_threshold")), &val)) {
-    uint64_t threshold;
-    try {
-      threshold = fine::decode<uint64_t>(env, fine::Term(val));
-    } catch (...) {
-      return fine_error_string(env, "Invalid scheduler_threshold value");
-    }
+    uint64_t threshold = fine::decode<uint64_t>(env, fine::Term(val));
     hailo_status s = configured_model->set_scheduler_threshold(static_cast<uint32_t>(threshold));
     if (s != HAILO_SUCCESS)
       return fine_error_string(env, "Failed to set scheduler threshold: " + std::to_string(s));
@@ -431,12 +421,7 @@ fine::Term create_vdevice_opts(ErlNifEnv *env, fine::Term opts_term) {
     return create_vdevice(env);
   }
 
-  fine::Atom alg;
-  try {
-    alg = fine::decode<fine::Atom>(env, fine::Term(val));
-  } catch (...) {
-    return fine_error_string(env, "Invalid scheduling_algorithm value");
-  }
+  fine::Atom alg = fine::decode<fine::Atom>(env, fine::Term(val));
 
   hailo_vdevice_params_t params;
   hailo_status init_s = hailo_init_vdevice_params(&params);
