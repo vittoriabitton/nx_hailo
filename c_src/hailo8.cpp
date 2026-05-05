@@ -584,25 +584,32 @@ fine::Term infer(ErlNifEnv *env, fine::Term pipeline_term,
 // Creates a VDevice with scheduling configuration.
 // Accepts an opts map with optional key:
 //   scheduling_algorithm: :round_robin | :none
-// If the map is empty, delegates to the no-params VDevice::create() to
-// preserve backward-compatible defaults.
-fine::Term create_vdevice_opts(ErlNifEnv *env, std::map<fine::Atom, fine::Term> opts) {
-  if (opts.empty()) {
+// If the key is absent, delegates to VDevice::create() to preserve
+// backward-compatible defaults.
+fine::Term create_vdevice_opts(ErlNifEnv *env, fine::Term opts_term) {
+  ERL_NIF_TERM val;
+  if (!enif_get_map_value(env, opts_term, fine::encode(env, fine::Atom("scheduling_algorithm")), &val)) {
     return create_vdevice(env);
   }
 
-  hailo_vdevice_params_t params{};
-  params.scheduling_algorithm = HAILO_SCHEDULING_ALGORITHM_ROUND_ROBIN;
+  fine::Atom alg;
+  try {
+    alg = fine::decode<fine::Atom>(env, fine::Term(val));
+  } catch (...) {
+    return fine_error_string(env, "Invalid scheduling_algorithm value");
+  }
 
-  if (auto it = opts.find(fine::Atom("scheduling_algorithm")); it != opts.end()) {
-    fine::Atom alg = fine::decode<fine::Atom>(env, it->second);
-    if (alg == "round_robin") {
-      params.scheduling_algorithm = HAILO_SCHEDULING_ALGORITHM_ROUND_ROBIN;
-    } else if (alg == "none") {
-      params.scheduling_algorithm = HAILO_SCHEDULING_ALGORITHM_NONE;
-    } else {
-      return fine_error_string(env, "Unknown scheduling_algorithm (expected :round_robin or :none)");
-    }
+  hailo_vdevice_params_t params;
+  hailo_status init_s = hailo_init_vdevice_params(&params);
+  if (init_s != HAILO_SUCCESS)
+    return fine_error_string(env, "Failed to init vdevice params: " + std::to_string(init_s));
+
+  if (alg == "round_robin") {
+    params.scheduling_algorithm = HAILO_SCHEDULING_ALGORITHM_ROUND_ROBIN;
+  } else if (alg == "none") {
+    params.scheduling_algorithm = HAILO_SCHEDULING_ALGORITHM_NONE;
+  } else {
+    return fine_error_string(env, "Unknown scheduling_algorithm (expected :round_robin or :none)");
   }
 
   auto vdevice_expected = hailort::VDevice::create(params);
@@ -619,11 +626,11 @@ fine::Term create_vdevice_opts(ErlNifEnv *env, std::map<fine::Atom, fine::Term> 
 // Accepts an opts map with optional keys:
 //   scheduler_timeout_ms: non-negative integer (milliseconds)
 //   scheduler_threshold: non-negative integer (minimum frames before scheduling)
-// Note: scheduling_algorithm is set at VDevice creation time on hailo8.
+// Note: scheduling_algorithm is set at VDevice creation time (create_vdevice/1).
 fine::Term configure_network_group_opts(ErlNifEnv *env,
                                         fine::ResourcePtr<VDeviceResource> vdevice_res,
                                         std::string hef_path,
-                                        std::map<fine::Atom, fine::Term> opts) {
+                                        fine::Term opts_term) {
   auto hef = hailort::Hef::create(hef_path);
   if (!hef) {
     return fine_error_string(env, "Failed to load HEF file: " + std::to_string(hef.status()));
@@ -647,16 +654,28 @@ fine::Term configure_network_group_opts(ErlNifEnv *env,
 
   auto ng = std::move(network_groups->at(0));
 
+  ERL_NIF_TERM val;
+
   // Apply post-configure scheduler opts
-  if (auto it = opts.find(fine::Atom("scheduler_timeout_ms")); it != opts.end()) {
-    auto timeout_ms = fine::decode<uint64_t>(env, it->second);
+  if (enif_get_map_value(env, opts_term, fine::encode(env, fine::Atom("scheduler_timeout_ms")), &val)) {
+    uint64_t timeout_ms;
+    try {
+      timeout_ms = fine::decode<uint64_t>(env, fine::Term(val));
+    } catch (...) {
+      return fine_error_string(env, "Invalid scheduler_timeout_ms value");
+    }
     hailo_status s = ng->set_scheduler_timeout(std::chrono::milliseconds(timeout_ms));
     if (s != HAILO_SUCCESS)
       return fine_error_string(env, "Failed to set scheduler timeout: " + std::to_string(s));
   }
 
-  if (auto it = opts.find(fine::Atom("scheduler_threshold")); it != opts.end()) {
-    auto threshold = fine::decode<uint64_t>(env, it->second);
+  if (enif_get_map_value(env, opts_term, fine::encode(env, fine::Atom("scheduler_threshold")), &val)) {
+    uint64_t threshold;
+    try {
+      threshold = fine::decode<uint64_t>(env, fine::Term(val));
+    } catch (...) {
+      return fine_error_string(env, "Invalid scheduler_threshold value");
+    }
     hailo_status s = ng->set_scheduler_threshold(static_cast<uint32_t>(threshold));
     if (s != HAILO_SUCCESS)
       return fine_error_string(env, "Failed to set scheduler threshold: " + std::to_string(s));

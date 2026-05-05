@@ -358,17 +358,16 @@ fine::Term infer(ErlNifEnv *env, fine::Term pipeline_term,
 
 // Configures a network group with scheduling options bundled in an opts map.
 // Options (all optional):
-//   scheduler_algorithm: :round_robin | :none
-//   scheduler_timeout_ms: non-negative integer (milliseconds)
-//   scheduler_threshold: non-negative integer (minimum frames before scheduling)
-//   queue_size: positive integer (concurrent inference slots, default 1)
+//   scheduler_algorithm: :round_robin | :none   (VDevice-level; set via create_vdevice/1)
+//   scheduler_timeout_ms: non-negative integer  (applied post-configure on ConfiguredInferModel)
+//   scheduler_threshold: non-negative integer   (applied post-configure on ConfiguredInferModel)
 //
-// All scheduler_* options MUST be set before configure(); this is why they are
-// bundled here rather than exposed as post-configure setters.
+// Note on HailoRT 5.x API: scheduler_timeout/threshold are set on ConfiguredInferModel
+// after configure(). scheduling_algorithm is set at VDevice level.
 fine::Term configure_network_group_opts(ErlNifEnv *env,
                                         fine::ResourcePtr<VDeviceResource> vdevice_res,
                                         std::string hef_path,
-                                        std::map<fine::Atom, fine::Term> opts) {
+                                        fine::Term opts_term) {
   auto infer_model_exp = vdevice_res->vdevice->create_infer_model(hef_path);
   if (!infer_model_exp) {
     return fine_error_string(env, "Failed to create InferModel: " +
@@ -376,51 +375,42 @@ fine::Term configure_network_group_opts(ErlNifEnv *env,
   }
   std::shared_ptr<InferModel> infer_model = infer_model_exp.value();
 
-  // Apply scheduler_algorithm before configure()
-  if (auto it = opts.find(fine::Atom("scheduler_algorithm")); it != opts.end()) {
-    fine::Atom alg = fine::decode<fine::Atom>(env, it->second);
-    hailo_scheduling_algorithm_t alg_val;
-    if (alg == "round_robin") {
-      alg_val = HAILO_SCHEDULING_ALGORITHM_ROUND_ROBIN;
-    } else if (alg == "none") {
-      alg_val = HAILO_SCHEDULING_ALGORITHM_NONE;
-    } else {
-      return fine_error_string(env, "Unknown scheduler_algorithm (expected :round_robin or :none)");
-    }
-    hailo_status s = infer_model->set_scheduler_algorithm(alg_val);
-    if (s != HAILO_SUCCESS)
-      return fine_error_string(env, "Failed to set scheduler algorithm: " + std::to_string(s));
-  }
-
-  // Apply scheduler_timeout_ms before configure()
-  if (auto it = opts.find(fine::Atom("scheduler_timeout_ms")); it != opts.end()) {
-    auto timeout_ms = fine::decode<uint64_t>(env, it->second);
-    hailo_status s = infer_model->set_scheduler_timeout(std::chrono::milliseconds(timeout_ms));
-    if (s != HAILO_SUCCESS)
-      return fine_error_string(env, "Failed to set scheduler timeout: " + std::to_string(s));
-  }
-
-  // Apply scheduler_threshold before configure()
-  if (auto it = opts.find(fine::Atom("scheduler_threshold")); it != opts.end()) {
-    auto threshold = fine::decode<uint64_t>(env, it->second);
-    hailo_status s = infer_model->set_scheduler_threshold(static_cast<uint32_t>(threshold));
-    if (s != HAILO_SUCCESS)
-      return fine_error_string(env, "Failed to set scheduler threshold: " + std::to_string(s));
-  }
-
-  // Build configure params with optional queue_size
-  ConfiguredInferModel::Params params;
-  if (auto it = opts.find(fine::Atom("queue_size")); it != opts.end()) {
-    params.queue_size = static_cast<uint32_t>(fine::decode<uint64_t>(env, it->second));
-  }
-
-  auto configured_exp = infer_model->configure(params);
+  auto configured_exp = infer_model->configure();
   if (!configured_exp) {
     return fine_error_string(env, "Failed to configure InferModel: " +
                                   std::to_string(configured_exp.status()));
   }
   auto configured_model =
       std::make_unique<ConfiguredInferModel>(std::move(configured_exp.value()));
+
+  ERL_NIF_TERM val;
+
+  // Apply scheduler_timeout_ms post-configure
+  if (enif_get_map_value(env, opts_term, fine::encode(env, fine::Atom("scheduler_timeout_ms")), &val)) {
+    uint64_t timeout_ms;
+    try {
+      timeout_ms = fine::decode<uint64_t>(env, fine::Term(val));
+    } catch (...) {
+      return fine_error_string(env, "Invalid scheduler_timeout_ms value");
+    }
+    hailo_status s = configured_model->set_scheduler_timeout(std::chrono::milliseconds(timeout_ms));
+    if (s != HAILO_SUCCESS)
+      return fine_error_string(env, "Failed to set scheduler timeout: " + std::to_string(s));
+  }
+
+  // Apply scheduler_threshold post-configure
+  if (enif_get_map_value(env, opts_term, fine::encode(env, fine::Atom("scheduler_threshold")), &val)) {
+    uint64_t threshold;
+    try {
+      threshold = fine::decode<uint64_t>(env, fine::Term(val));
+    } catch (...) {
+      return fine_error_string(env, "Invalid scheduler_threshold value");
+    }
+    hailo_status s = configured_model->set_scheduler_threshold(static_cast<uint32_t>(threshold));
+    if (s != HAILO_SUCCESS)
+      return fine_error_string(env, "Failed to set scheduler threshold: " + std::to_string(s));
+  }
+
   hailo_status act_status = configured_model->activate();
   if (act_status != HAILO_SUCCESS && act_status != HAILO_INVALID_OPERATION) {
     return fine_error_string(env, "Failed to activate model: " + std::to_string(act_status));
@@ -433,25 +423,55 @@ fine::Term configure_network_group_opts(ErlNifEnv *env,
   return fine_ok(env, resource);
 }
 
-// Arity-1 create_vdevice: accepts an opts map but ignores it (scheduler
-// opts are per-model on hailo10, set via configure_network_group opts).
-fine::Term create_vdevice_opts(ErlNifEnv *env,
-                               std::map<fine::Atom, fine::Term> /*opts*/) {
-  return create_vdevice(env);
+// Arity-1 create_vdevice: scheduling_algorithm is a VDevice-level setting on
+// hailo10 too; use hailo_init_vdevice_params for safe default initialization.
+fine::Term create_vdevice_opts(ErlNifEnv *env, fine::Term opts_term) {
+  ERL_NIF_TERM val;
+  if (!enif_get_map_value(env, opts_term, fine::encode(env, fine::Atom("scheduling_algorithm")), &val)) {
+    return create_vdevice(env);
+  }
+
+  fine::Atom alg;
+  try {
+    alg = fine::decode<fine::Atom>(env, fine::Term(val));
+  } catch (...) {
+    return fine_error_string(env, "Invalid scheduling_algorithm value");
+  }
+
+  hailo_vdevice_params_t params;
+  hailo_status init_s = hailo_init_vdevice_params(&params);
+  if (init_s != HAILO_SUCCESS)
+    return fine_error_string(env, "Failed to init vdevice params: " + std::to_string(init_s));
+
+  if (alg == "round_robin") {
+    params.scheduling_algorithm = HAILO_SCHEDULING_ALGORITHM_ROUND_ROBIN;
+  } else if (alg == "none") {
+    params.scheduling_algorithm = HAILO_SCHEDULING_ALGORITHM_NONE;
+  } else {
+    return fine_error_string(env, "Unknown scheduling_algorithm (expected :round_robin or :none)");
+  }
+
+  auto vdevice_exp = VDevice::create_shared(params);
+  if (!vdevice_exp) {
+    return fine_error_string(env, "Failed to create VDevice: " + std::to_string(vdevice_exp.status()));
+  }
+  auto resource = fine::make_resource<VDeviceResource>();
+  resource->vdevice = std::move(vdevice_exp.value());
+  return fine_ok(env, resource);
 }
 
-// set_scheduler_timeout and set_scheduler_threshold are not applicable for
-// hailo10 — scheduler opts are set before configure() via configure_network_group/3.
+// set_scheduler_timeout and set_scheduler_threshold are not applicable as
+// standalone NIFs for hailo10 — pass opts to configure_network_group/3 instead.
 fine::Term set_scheduler_timeout(ErlNifEnv *env, fine::Term /*ng_ref*/,
                                  fine::Term /*timeout_ms*/) {
   return fine_error_string(env, "set_scheduler_timeout is not applicable for hailo10; "
-                                "pass scheduler_timeout_ms in configure_network_group opts instead");
+                                "pass :scheduler_timeout_ms in configure_network_group/3 opts instead");
 }
 
 fine::Term set_scheduler_threshold(ErlNifEnv *env, fine::Term /*ng_ref*/,
                                    fine::Term /*threshold*/) {
   return fine_error_string(env, "set_scheduler_threshold is not applicable for hailo10; "
-                                "pass scheduler_threshold in configure_network_group opts instead");
+                                "pass :scheduler_threshold in configure_network_group/3 opts instead");
 }
 
 fine::Term hailo_version(ErlNifEnv *env) {

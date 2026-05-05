@@ -18,8 +18,9 @@ defmodule NxHailo.API do
   @doc """
   Creates a new Hailo Virtual Device with scheduling configuration.
 
-  Options (hailo8 only — ignored on hailo10 where scheduling is per-model):
-    - `:scheduling_algorithm` — `:round_robin` (default) or `:none`
+  Options:
+    - `:scheduling_algorithm` — `:round_robin` or `:none`; controls the
+      HailoRT scheduler for multi-model concurrency on the shared VDevice
 
   Returns `{:ok, %VDevice{}}` or `{:error, reason}`.
   """
@@ -65,16 +66,14 @@ defmodule NxHailo.API do
     - `hef_path`: The path to the HEF file (string).
     - `opts`: A map of scheduling options.
 
-  hailo10 options (applied before `configure()` — cannot be changed after):
-    - `:scheduler_algorithm` — `:round_robin` or `:none`
-    - `:scheduler_timeout_ms` — integer milliseconds
-    - `:scheduler_threshold` — integer frame count
-    - `:queue_size` — integer, number of concurrent inference slots (default 1)
+  Options (both targets; all optional):
+    - `:scheduler_timeout_ms` — integer milliseconds; scheduler dispatches after
+      this timeout even if the frame threshold has not been reached
+    - `:scheduler_threshold` — integer frame count; minimum frames before
+      the scheduler dispatches to hardware
 
-  hailo8 options (applied post-configure; scheduling algorithm is set at
-  `create_vdevice/1` time):
-    - `:scheduler_timeout_ms` — integer milliseconds
-    - `:scheduler_threshold` — integer frame count
+  Note: `:scheduling_algorithm` (`:round_robin` | `:none`) is a VDevice-level
+  setting on both hailo8 and hailo10 — pass it to `create_vdevice/1` instead.
 
   Returns `{:ok, %NetworkGroup{}}` or `{:error, reason}`.
   """
