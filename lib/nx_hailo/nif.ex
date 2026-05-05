@@ -24,12 +24,18 @@ defmodule NxHailo.NIF do
 
   # NIF functions
   defnif hailo_version()
-  defnif create_vdevice()
-  defnif configure_network_group(_vdevice_ref, _hef_path)
+  defnif create_vdevice(_opts)
+  defnif configure_network_group(_vdevice_ref, _hef_path, _opts)
   defnif create_pipeline(_network_group_ref)
   defnif get_input_vstream_infos_from_ng(_network_group_ref)
   defnif get_output_vstream_infos_from_ng(_network_group_ref)
   defnif get_input_vstream_infos_from_pipeline(_pipeline_ref)
   defnif get_output_vstream_infos_from_pipeline(_pipeline_ref)
   defnif infer(_pipeline_ref, _input_data)
+  # hailo8: sets scheduler timeout on a configured network group (post-configure)
+  # hailo10: returns {:error, reason} — use configure_network_group/3 opts instead
+  defnif set_scheduler_timeout(_network_group_ref, _timeout_ms)
+  # hailo8: sets scheduler frame threshold on a configured network group (post-configure)
+  # hailo10: returns {:error, reason} — use configure_network_group/3 opts instead
+  defnif set_scheduler_threshold(_network_group_ref, _threshold)
 end

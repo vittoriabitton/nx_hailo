@@ -13,14 +13,30 @@ defmodule NxHailo.API do
 
   Returns `{:ok, %VDevice{}}` or `{:error, reason}`.
   """
-  def create_vdevice() do
-    if dev = :persistent_term.get({__MODULE__, :vdevice}, nil) do
-      {:ok, dev}
+  def create_vdevice(), do: create_vdevice(%{})
+
+  @doc """
+  Creates a new Hailo Virtual Device with scheduling configuration.
+
+  Options (hailo8 only — ignored on hailo10 where scheduling is per-model):
+    - `:scheduling_algorithm` — `:round_robin` (default) or `:none`
+
+  Returns `{:ok, %VDevice{}}` or `{:error, reason}`.
+  """
+  def create_vdevice(opts) when is_map(opts) do
+    cached = :persistent_term.get({__MODULE__, :vdevice}, nil)
+
+    # Only use the cached vdevice if no options were given; a caller providing
+    # opts (e.g. scheduling_algorithm) wants a vdevice configured accordingly.
+    if cached && opts == %{} do
+      {:ok, cached}
     else
-      case NIF.create_vdevice() do
+      case NIF.create_vdevice(opts) do
         {:ok, ref} ->
           dev = %VDevice{ref: ref}
-          :persistent_term.put({__MODULE__, :vdevice}, dev)
+          # Only cache the default (no-opts) vdevice; opts-specific vdevices
+          # are caller-managed to avoid hiding scheduling config mismatches.
+          if opts == %{}, do: :persistent_term.put({__MODULE__, :vdevice}, dev)
           {:ok, dev}
 
         error ->
@@ -38,9 +54,33 @@ defmodule NxHailo.API do
 
   Returns `{:ok, %NetworkGroup{}}` or `{:error, reason}`.
   """
-  def configure_network_group(%VDevice{ref: vdevice_ref} = _vdevice, hef_path)
-      when is_binary(hef_path) do
-    with {:ok, ng_ref} <- NIF.configure_network_group(vdevice_ref, hef_path),
+  def configure_network_group(%VDevice{} = vdevice, hef_path) when is_binary(hef_path),
+    do: configure_network_group(vdevice, hef_path, %{})
+
+  @doc """
+  Configures a network group on the given VDevice using a HEF file, with scheduling options.
+
+  Parameters:
+    - `vdevice`: The `%VDevice{}` struct.
+    - `hef_path`: The path to the HEF file (string).
+    - `opts`: A map of scheduling options.
+
+  hailo10 options (applied before `configure()` — cannot be changed after):
+    - `:scheduler_algorithm` — `:round_robin` or `:none`
+    - `:scheduler_timeout_ms` — integer milliseconds
+    - `:scheduler_threshold` — integer frame count
+    - `:queue_size` — integer, number of concurrent inference slots (default 1)
+
+  hailo8 options (applied post-configure; scheduling algorithm is set at
+  `create_vdevice/1` time):
+    - `:scheduler_timeout_ms` — integer milliseconds
+    - `:scheduler_threshold` — integer frame count
+
+  Returns `{:ok, %NetworkGroup{}}` or `{:error, reason}`.
+  """
+  def configure_network_group(%VDevice{ref: vdevice_ref} = _vdevice, hef_path, opts)
+      when is_binary(hef_path) and is_map(opts) do
+    with {:ok, ng_ref} <- NIF.configure_network_group(vdevice_ref, hef_path, opts),
          {:ok, raw_input_infos} <- NIF.get_input_vstream_infos_from_ng(ng_ref),
          {:ok, raw_output_infos} <- NIF.get_output_vstream_infos_from_ng(ng_ref) do
       input_infos = Enum.map(raw_input_infos, &VStreamInfo.from_map/1)
@@ -81,6 +121,38 @@ defmodule NxHailo.API do
          output_vstream_infos: output_infos
        }}
     end
+  end
+
+  @doc """
+  Sets the scheduler timeout on a configured network group (hailo8 only).
+
+  The scheduler dispatches inference to hardware after `timeout_ms` milliseconds
+  even if the frame threshold has not been reached.
+
+  On hailo10, returns `{:error, reason}` — pass `:scheduler_timeout_ms` in
+  `configure_network_group/3` opts instead.
+
+  Returns `:ok` or `{:error, reason}`.
+  """
+  def set_scheduler_timeout(%NetworkGroup{ref: ng_ref}, timeout_ms)
+      when is_integer(timeout_ms) and timeout_ms >= 0 do
+    NIF.set_scheduler_timeout(ng_ref, timeout_ms)
+  end
+
+  @doc """
+  Sets the scheduler frame threshold on a configured network group (hailo8 only).
+
+  The scheduler dispatches inference to hardware once `threshold` frames have
+  been queued.
+
+  On hailo10, returns `{:error, reason}` — pass `:scheduler_threshold` in
+  `configure_network_group/3` opts instead.
+
+  Returns `:ok` or `{:error, reason}`.
+  """
+  def set_scheduler_threshold(%NetworkGroup{ref: ng_ref}, threshold)
+      when is_integer(threshold) and threshold >= 0 do
+    NIF.set_scheduler_threshold(ng_ref, threshold)
   end
 
   @doc """

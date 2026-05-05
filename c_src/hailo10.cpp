@@ -356,18 +356,135 @@ fine::Term infer(ErlNifEnv *env, fine::Term pipeline_term,
   return fine_ok(env, output_map);
 }
 
+// Configures a network group with scheduling options bundled in an opts map.
+// Options (all optional):
+//   scheduler_algorithm: :round_robin | :none
+//   scheduler_timeout_ms: non-negative integer (milliseconds)
+//   scheduler_threshold: non-negative integer (minimum frames before scheduling)
+//   queue_size: positive integer (concurrent inference slots, default 1)
+//
+// All scheduler_* options MUST be set before configure(); this is why they are
+// bundled here rather than exposed as post-configure setters.
+fine::Term configure_network_group_opts(ErlNifEnv *env,
+                                        fine::ResourcePtr<VDeviceResource> vdevice_res,
+                                        std::string hef_path,
+                                        std::map<fine::Atom, fine::Term> opts) {
+  auto infer_model_exp = vdevice_res->vdevice->create_infer_model(hef_path);
+  if (!infer_model_exp) {
+    return fine_error_string(env, "Failed to create InferModel: " +
+                                  std::to_string(infer_model_exp.status()));
+  }
+  std::shared_ptr<InferModel> infer_model = infer_model_exp.value();
+
+  // Apply scheduler_algorithm before configure()
+  if (auto it = opts.find(fine::Atom("scheduler_algorithm")); it != opts.end()) {
+    fine::Atom alg = fine::decode<fine::Atom>(env, it->second);
+    hailo_scheduling_algorithm_t alg_val;
+    if (alg == "round_robin") {
+      alg_val = HAILO_SCHEDULING_ALGORITHM_ROUND_ROBIN;
+    } else if (alg == "none") {
+      alg_val = HAILO_SCHEDULING_ALGORITHM_NONE;
+    } else {
+      return fine_error_string(env, "Unknown scheduler_algorithm (expected :round_robin or :none)");
+    }
+    hailo_status s = infer_model->set_scheduler_algorithm(alg_val);
+    if (s != HAILO_SUCCESS)
+      return fine_error_string(env, "Failed to set scheduler algorithm: " + std::to_string(s));
+  }
+
+  // Apply scheduler_timeout_ms before configure()
+  if (auto it = opts.find(fine::Atom("scheduler_timeout_ms")); it != opts.end()) {
+    auto timeout_ms = fine::decode<uint64_t>(env, it->second);
+    hailo_status s = infer_model->set_scheduler_timeout(std::chrono::milliseconds(timeout_ms));
+    if (s != HAILO_SUCCESS)
+      return fine_error_string(env, "Failed to set scheduler timeout: " + std::to_string(s));
+  }
+
+  // Apply scheduler_threshold before configure()
+  if (auto it = opts.find(fine::Atom("scheduler_threshold")); it != opts.end()) {
+    auto threshold = fine::decode<uint64_t>(env, it->second);
+    hailo_status s = infer_model->set_scheduler_threshold(static_cast<uint32_t>(threshold));
+    if (s != HAILO_SUCCESS)
+      return fine_error_string(env, "Failed to set scheduler threshold: " + std::to_string(s));
+  }
+
+  // Build configure params with optional queue_size
+  ConfiguredInferModel::Params params;
+  if (auto it = opts.find(fine::Atom("queue_size")); it != opts.end()) {
+    params.queue_size = static_cast<uint32_t>(fine::decode<uint64_t>(env, it->second));
+  }
+
+  auto configured_exp = infer_model->configure(params);
+  if (!configured_exp) {
+    return fine_error_string(env, "Failed to configure InferModel: " +
+                                  std::to_string(configured_exp.status()));
+  }
+  auto configured_model =
+      std::make_unique<ConfiguredInferModel>(std::move(configured_exp.value()));
+  hailo_status act_status = configured_model->activate();
+  if (act_status != HAILO_SUCCESS && act_status != HAILO_INVALID_OPERATION) {
+    return fine_error_string(env, "Failed to activate model: " + std::to_string(act_status));
+  }
+
+  auto resource = fine::make_resource<InferModelResource>();
+  resource->vdevice = vdevice_res->vdevice;
+  resource->infer_model = std::move(infer_model);
+  resource->configured_model = std::move(configured_model);
+  return fine_ok(env, resource);
+}
+
+// Arity-1 create_vdevice: accepts an opts map but ignores it (scheduler
+// opts are per-model on hailo10, set via configure_network_group opts).
+fine::Term create_vdevice_opts(ErlNifEnv *env,
+                               std::map<fine::Atom, fine::Term> /*opts*/) {
+  return create_vdevice(env);
+}
+
+// set_scheduler_timeout and set_scheduler_threshold are not applicable for
+// hailo10 — scheduler opts are set before configure() via configure_network_group/3.
+fine::Term set_scheduler_timeout(ErlNifEnv *env, fine::Term /*ng_ref*/,
+                                 fine::Term /*timeout_ms*/) {
+  return fine_error_string(env, "set_scheduler_timeout is not applicable for hailo10; "
+                                "pass scheduler_timeout_ms in configure_network_group opts instead");
+}
+
+fine::Term set_scheduler_threshold(ErlNifEnv *env, fine::Term /*ng_ref*/,
+                                   fine::Term /*threshold*/) {
+  return fine_error_string(env, "set_scheduler_threshold is not applicable for hailo10; "
+                                "pass scheduler_threshold in configure_network_group opts instead");
+}
+
 fine::Term hailo_version(ErlNifEnv *env) {
   return fine::encode(env, fine::Atom("hailo10"));
 }
 
+// Register NIF functions
 FINE_NIF(hailo_version, 0);
 FINE_NIF(create_pipeline, 1);
 FINE_NIF(get_output_vstream_infos_from_pipeline, 1);
+// infer: ERL_NIF_DIRTY_JOB_IO_BOUND (flags=2)
 FINE_NIF(infer, 2);
-FINE_NIF(create_vdevice, 0);
-FINE_NIF(configure_network_group, 2);
 FINE_NIF(get_input_vstream_infos_from_ng, 1);
 FINE_NIF(get_output_vstream_infos_from_ng, 1);
 FINE_NIF(get_input_vstream_infos_from_pipeline, 1);
+FINE_NIF(set_scheduler_timeout, 0);
+FINE_NIF(set_scheduler_threshold, 0);
+
+// create_vdevice/1 and configure_network_group/3 use custom C++ names so
+// they are registered manually below (api.ex always delegates through these).
+static ERL_NIF_TERM configure_network_group_opts_nif(ErlNifEnv *env, int argc,
+                                                      const ERL_NIF_TERM argv[]) {
+  return fine::nif(env, argc, argv, configure_network_group_opts);
+}
+static auto __nif_reg_cng3 = fine::Registration::register_nif(
+    {"configure_network_group", fine::nif_arity(configure_network_group_opts),
+     configure_network_group_opts_nif, ERL_NIF_DIRTY_JOB_IO_BOUND});
+
+static ERL_NIF_TERM create_vdevice_opts_nif(ErlNifEnv *env, int argc,
+                                             const ERL_NIF_TERM argv[]) {
+  return fine::nif(env, argc, argv, create_vdevice_opts);
+}
+static auto __nif_reg_vd1 = fine::Registration::register_nif(
+    {"create_vdevice", fine::nif_arity(create_vdevice_opts), create_vdevice_opts_nif, 0});
 
 FINE_INIT("Elixir.NxHailo.NIF");

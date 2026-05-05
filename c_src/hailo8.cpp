@@ -3,6 +3,7 @@
 
 #include "hailo/hailort.hpp"
 #include <fine.hpp>
+#include <chrono>
 #include <map>
 #include <memory>
 #include <string>
@@ -580,19 +581,152 @@ fine::Term infer(ErlNifEnv *env, fine::Term pipeline_term,
   return fine_ok(env, output_map);
 }
 
+// Creates a VDevice with scheduling configuration.
+// Accepts an opts map with optional key:
+//   scheduling_algorithm: :round_robin | :none
+// If the map is empty, delegates to the no-params VDevice::create() to
+// preserve backward-compatible defaults.
+fine::Term create_vdevice_opts(ErlNifEnv *env, std::map<fine::Atom, fine::Term> opts) {
+  if (opts.empty()) {
+    return create_vdevice(env);
+  }
+
+  hailo_vdevice_params_t params{};
+  params.scheduling_algorithm = HAILO_SCHEDULING_ALGORITHM_ROUND_ROBIN;
+
+  if (auto it = opts.find(fine::Atom("scheduling_algorithm")); it != opts.end()) {
+    fine::Atom alg = fine::decode<fine::Atom>(env, it->second);
+    if (alg == "round_robin") {
+      params.scheduling_algorithm = HAILO_SCHEDULING_ALGORITHM_ROUND_ROBIN;
+    } else if (alg == "none") {
+      params.scheduling_algorithm = HAILO_SCHEDULING_ALGORITHM_NONE;
+    } else {
+      return fine_error_string(env, "Unknown scheduling_algorithm (expected :round_robin or :none)");
+    }
+  }
+
+  auto vdevice_expected = hailort::VDevice::create(params);
+  if (!vdevice_expected) {
+    return fine_error_string(env, "Failed to create virtual device: " +
+                                  std::to_string(vdevice_expected.status()));
+  }
+  auto resource = fine::make_resource<VDeviceResource>();
+  resource->vdevice = std::move(vdevice_expected.value());
+  return fine_ok(env, resource);
+}
+
+// Configures a network group and optionally sets scheduler timeout/threshold.
+// Accepts an opts map with optional keys:
+//   scheduler_timeout_ms: non-negative integer (milliseconds)
+//   scheduler_threshold: non-negative integer (minimum frames before scheduling)
+// Note: scheduling_algorithm is set at VDevice creation time on hailo8.
+fine::Term configure_network_group_opts(ErlNifEnv *env,
+                                        fine::ResourcePtr<VDeviceResource> vdevice_res,
+                                        std::string hef_path,
+                                        std::map<fine::Atom, fine::Term> opts) {
+  auto hef = hailort::Hef::create(hef_path);
+  if (!hef) {
+    return fine_error_string(env, "Failed to load HEF file: " + std::to_string(hef.status()));
+  }
+
+  auto configure_params = vdevice_res->vdevice->create_configure_params(hef.value());
+  if (!configure_params) {
+    return fine_error_string(env, "Failed to create configure params: " +
+                                  std::to_string(configure_params.status()));
+  }
+
+  auto network_groups = vdevice_res->vdevice->configure(hef.value(), configure_params.value());
+  if (!network_groups) {
+    return fine_error_string(env, "Failed to configure network groups: " +
+                                  std::to_string(network_groups.status()));
+  }
+  if (network_groups->size() != 1) {
+    return fine_error_string(env, "Invalid number of network groups: " +
+                                  std::to_string(network_groups->size()));
+  }
+
+  auto ng = std::move(network_groups->at(0));
+
+  // Apply post-configure scheduler opts
+  if (auto it = opts.find(fine::Atom("scheduler_timeout_ms")); it != opts.end()) {
+    auto timeout_ms = fine::decode<uint64_t>(env, it->second);
+    hailo_status s = ng->set_scheduler_timeout(std::chrono::milliseconds(timeout_ms));
+    if (s != HAILO_SUCCESS)
+      return fine_error_string(env, "Failed to set scheduler timeout: " + std::to_string(s));
+  }
+
+  if (auto it = opts.find(fine::Atom("scheduler_threshold")); it != opts.end()) {
+    auto threshold = fine::decode<uint64_t>(env, it->second);
+    hailo_status s = ng->set_scheduler_threshold(static_cast<uint32_t>(threshold));
+    if (s != HAILO_SUCCESS)
+      return fine_error_string(env, "Failed to set scheduler threshold: " + std::to_string(s));
+  }
+
+  auto resource = fine::make_resource<NetworkGroupResource>();
+  resource->network_group = std::move(ng);
+  resource->vdevice = vdevice_res->vdevice;
+  return fine_ok(env, resource);
+}
+
+// Sets the scheduler timeout on a configured network group.
+// Concurrent inference is dispatched to the hardware after this timeout
+// even if the threshold has not been reached.
+fine::Term set_scheduler_timeout(ErlNifEnv *env,
+                                  fine::ResourcePtr<NetworkGroupResource> ng_res,
+                                  uint64_t timeout_ms) {
+  hailo_status s = ng_res->network_group->set_scheduler_timeout(
+      std::chrono::milliseconds(timeout_ms));
+  if (s != HAILO_SUCCESS)
+    return fine_error_string(env, "Failed to set scheduler timeout: " + std::to_string(s));
+  return fine::encode(env, fine::Atom("ok"));
+}
+
+// Sets the minimum number of frames that must be queued before the scheduler
+// dispatches inference to the hardware.
+fine::Term set_scheduler_threshold(ErlNifEnv *env,
+                                    fine::ResourcePtr<NetworkGroupResource> ng_res,
+                                    uint64_t threshold) {
+  hailo_status s = ng_res->network_group->set_scheduler_threshold(
+      static_cast<uint32_t>(threshold));
+  if (s != HAILO_SUCCESS)
+    return fine_error_string(env, "Failed to set scheduler threshold: " + std::to_string(s));
+  return fine::encode(env, fine::Atom("ok"));
+}
+
 fine::Term hailo_version(ErlNifEnv *env) {
   return fine::encode(env, fine::Atom("hailo8"));
 }
 
-// Register NIF functions (same names as v5 so Elixir API is identical)
+// Register NIF functions
 FINE_NIF(hailo_version, 0);
 FINE_NIF(create_pipeline, 1);
 FINE_NIF(get_output_vstream_infos_from_pipeline, 1);
+// infer: ERL_NIF_DIRTY_JOB_IO_BOUND (flags=2).
+// Note: InferVStreams::infer() is not reentrant per-pipeline; concurrent
+// Elixir processes can call infer() on different pipelines sharing the same
+// VDevice (with ROUND_ROBIN scheduler), but a single pipeline serializes.
 FINE_NIF(infer, 2);
-FINE_NIF(create_vdevice, 0);
-FINE_NIF(configure_network_group, 2);
 FINE_NIF(get_input_vstream_infos_from_ng, 1);
 FINE_NIF(get_output_vstream_infos_from_ng, 1);
 FINE_NIF(get_input_vstream_infos_from_pipeline, 1);
+FINE_NIF(set_scheduler_timeout, 0);
+FINE_NIF(set_scheduler_threshold, 0);
+
+// create_vdevice/1 and configure_network_group/3 use custom C++ names so
+// they are registered manually below (api.ex always delegates through these).
+static ERL_NIF_TERM create_vdevice_opts_nif(ErlNifEnv *env, int argc,
+                                             const ERL_NIF_TERM argv[]) {
+  return fine::nif(env, argc, argv, create_vdevice_opts);
+}
+static auto __nif_reg_vd1 = fine::Registration::register_nif(
+    {"create_vdevice", fine::nif_arity(create_vdevice_opts), create_vdevice_opts_nif, 0});
+
+static ERL_NIF_TERM configure_network_group_opts_nif(ErlNifEnv *env, int argc,
+                                                      const ERL_NIF_TERM argv[]) {
+  return fine::nif(env, argc, argv, configure_network_group_opts);
+}
+static auto __nif_reg_cng3 = fine::Registration::register_nif(
+    {"configure_network_group", fine::nif_arity(configure_network_group_opts),
+     configure_network_group_opts_nif, ERL_NIF_DIRTY_JOB_IO_BOUND});
 
 FINE_INIT("Elixir.NxHailo.NIF");
