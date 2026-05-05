@@ -23,7 +23,7 @@ priv = to_string(:code.priv_dir(:nx_hailo))
 [%{name: name}] = hailo_model.pipeline.input_vstream_infos
 [%{name: output_key}] = hailo_model.pipeline.output_vstream_infos
 
-:ok
+hailo_model
 ```
 
 ## Image Preprocessing

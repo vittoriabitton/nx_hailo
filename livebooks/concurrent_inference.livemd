@@ -1,0 +1,286 @@
+# HailoAI Concurrent Inference
+
+## Setup
+
+This notebook runs **two YOLOv8 models concurrently** on a single Hailo-8 device using the
+HailoRT `round_robin` scheduler. It requires the same Attached Node runtime as
+`remote_device_inference.livemd`.
+
+**Start the node on the device:**
+
+```shell
+./scripts/start_node.exs
+```
+
+Then in Livebook go to **Runtime → Attached Node** and enter the node name and cookie printed
+by the script.
+
+> Run `livebooks/download_models.livemd` twice — once for `yolov8m` and once for `yolov8s`
+> (both with `device = "hailo8"`) — before proceeding.
+
+## Load Models on a Shared VDevice
+
+Both models share a single `VDevice` created with `scheduling_algorithm: :round_robin`.
+The HailoRT scheduler time-slices the neural engine between the two pipelines automatically.
+
+```elixir
+alias NxHailo.API
+priv = to_string(:code.priv_dir(:nx_hailo))
+priv = "/home/valente/nx_hailo/priv"
+
+# A single VDevice shared by both models. round_robin lets the HailoRT scheduler
+# interleave inference requests from both pipelines on the same hardware.
+{:ok, vdevice} = API.create_vdevice(%{scheduling_algorithm: :round_robin})
+
+{:ok, ng_m} = API.configure_network_group(vdevice, "#{priv}/yolov8m.hef")
+{:ok, pipeline_m} = API.create_pipeline(ng_m)
+model_m = %NxHailo.Model{pipeline: pipeline_m, name: "yolov8m"}
+
+{:ok, ng_s} = API.configure_network_group(vdevice, "#{priv}/yolov8s.hef")
+{:ok, pipeline_s} = API.create_pipeline(ng_s)
+model_s = %NxHailo.Model{pipeline: pipeline_s, name: "yolov8s"}
+
+[model_m, model_s]
+```
+
+## Load Classes and Helpers
+
+```elixir
+classes =
+  File.read!("#{priv}/yolov8m_classes.json")
+  |> Jason.decode!()
+  |> Enum.with_index()
+  |> Map.new(fn {v, k} -> {k, v} end)
+
+[input_m] = model_m.pipeline.input_vstream_infos
+[output_m] = model_m.pipeline.output_vstream_infos
+[input_s] = model_s.pipeline.input_vstream_infos
+[output_s] = model_s.pipeline.output_vstream_infos
+```
+
+```elixir
+evision_resize_and_pad =
+  fn image, {h, w}, target_size ->
+    size = max(h, w)
+    pad_h = div(size - h, 2)
+    pad_w = div(size - w, 2)
+
+    Evision.copyMakeBorder(
+      image,
+      pad_h,
+      pad_h + rem(size - h, 2),
+      pad_w,
+      pad_w + rem(size - w, 2),
+      Evision.Constant.cv_BORDER_CONSTANT(),
+      value: {114, 114, 114}
+    )
+    |> Evision.resize({target_size, target_size})
+  end
+```
+
+```elixir
+defmodule YOLODraw do
+  @font_face Evision.Constant.cv_FONT_HERSHEY_SIMPLEX()
+  @font_size 0.5
+  @stroke_width 2
+  @text_padding 5
+
+  def draw_detected_objects(mat, detected_objects, label) do
+    {fh, fw, _} = Evision.Mat.shape(mat)
+    mat = draw_label_box(mat, label, fw, fh)
+    mat = Enum.reduce(detected_objects, mat, &draw_box(&2, &1))
+    Enum.reduce(detected_objects, mat, &draw_label_text(&2, &1))
+  end
+
+  defp draw_label_box(mat, label, w, h) do
+    {{tw, th}, _} = Evision.getTextSize(label, @font_face, 0.7, 1)
+    bw = tw + 2 * @text_padding
+    bh = th + 2 * @text_padding
+
+    mat
+    |> Evision.rectangle({w - bw, h - bh}, {w, h}, {255, 0, 0}, thickness: -1)
+    |> Evision.putText(label, {w - bw + @text_padding, h - @text_padding},
+      @font_face, 0.7, {255, 255, 255},
+      thickness: 1, lineType: Evision.Constant.cv_LINE_AA()
+    )
+  end
+
+  defp draw_box(mat, obj) do
+    Evision.rectangle(mat, {obj.xmin, obj.ymin}, {obj.xmax, obj.ymax},
+      class_color(obj.class_id), thickness: @stroke_width)
+  end
+
+  defp draw_label_text(mat, obj) do
+    label = "#{obj.class_name} #{round(obj.score * 100)}%"
+    {{tw, th}, baseline} = Evision.getTextSize(label, @font_face, @font_size, 1)
+    bg_tl = {obj.xmin, max(obj.ymin - th - 2 * @text_padding - baseline, 0)}
+    bg_br = {obj.xmin + tw + 2 * @text_padding, max(obj.ymin - baseline, 0)}
+
+    mat
+    |> Evision.rectangle(bg_tl, bg_br, {0, 0, 0}, thickness: -1)
+    |> Evision.putText(
+      label,
+      {obj.xmin + @text_padding, max(obj.ymin - @text_padding - baseline, th + @text_padding)},
+      @font_face, @font_size, {255, 255, 255},
+      thickness: 1, lineType: Evision.Constant.cv_LINE_AA()
+    )
+  end
+
+  hex_to_bgr = fn hex ->
+    hex
+    |> String.replace_prefix("#", "")
+    |> String.to_integer(16)
+    |> then(fn c ->
+      {Bitwise.band(c, 0xFF), Bitwise.band(Bitwise.bsr(c, 8), 0xFF),
+       Bitwise.band(Bitwise.bsr(c, 16), 0xFF)}
+    end)
+  end
+
+  @class_colors [
+    "#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF", "#00FFFF",
+    "#800000", "#008000", "#000080", "#FF00FF", "#800080", "#008080",
+    "#C0C0C0", "#FFA500", "#A52A2A", "#8A2BE2", "#5F9EA0", "#7FFF00",
+    "#D2691E", "#FF7F50", "#6495ED", "#DC143C", "#00FFFF", "#00008B",
+    "#008B8B", "#B8860B", "#A9A9A9", "#006400", "#BDB76B", "#8B008B",
+    "#556B2F", "#FF8C00", "#9932CC", "#8B0000", "#E9967A", "#8FBC8F",
+    "#483D8B", "#2F4F4F", "#00CED1", "#9400D3", "#FF1493", "#00BFFF",
+    "#696969", "#1E90FF", "#B22222", "#FFFAF0", "#228B22", "#FF00FF",
+    "#DCDCDC", "#F8F8FF", "#FFD700", "#DAA520", "#808080", "#ADFF2F",
+    "#F0FFF0", "#FF69B4", "#CD5C5C", "#4B0082", "#FFFFF0", "#F0E68C",
+    "#E6E6FA", "#FFF0F5", "#7CFC00", "#FFFACD", "#ADD8E6", "#F08080",
+    "#E0FFFF", "#FAFAD2", "#D3D3D3", "#90EE90", "#FFB6C1", "#FFA07A",
+    "#20B2AA", "#87CEFA", "#778899", "#B0C4DE", "#FFFFE0", "#00FF7F",
+    "#4682B4", "#D2B48C", "#008080", "#D8BFD8", "#FF6347", "#40E0D0",
+    "#EE82EE", "#F5DEB3", "#FFFFFF", "#F5F5F5"
+  ]
+  |> Enum.with_index(&{&2, hex_to_bgr.(&1)})
+  |> Map.new()
+
+  def class_color(class_idx), do: Map.get(@class_colors, class_idx, {255, 0, 0})
+end
+```
+
+## Camera Setup
+
+Choose **one** option below, then proceed to the Concurrent Inference section.
+
+### Option A — Standard V4L2 Camera
+
+```elixir
+find_working_cap = fn ->
+  Enum.find_value(Path.wildcard("/dev/video*"), fn device ->
+    cap = Evision.VideoCapture.videoCapture(device)
+
+    cond do
+      not Evision.VideoCapture.isOpened(cap) ->
+        Evision.VideoCapture.release(cap)
+        false
+
+      not Evision.VideoCapture.grab(cap) ->
+        Evision.VideoCapture.release(cap)
+        false
+
+      true ->
+        {cap, device}
+    end
+  end)
+end
+```
+
+```elixir
+{capture, device} = find_working_cap.()
+IO.puts("Using camera: #{device}")
+
+capture_frame = fn ->
+  Evision.VideoCapture.set(capture, Evision.Constant.cv_CAP_PROP_BUFFERSIZE(), 1)
+  true = Evision.VideoCapture.grab(capture)
+  Evision.VideoCapture.read(capture)
+end
+
+sample_frame = capture_frame.()
+{frame_h, frame_w, _} = Evision.Mat.shape(sample_frame)
+input_shape = {frame_h, frame_w}
+```
+
+### Option B — Raspberry Pi Camera (PiCam3 / libcamera)
+
+Start the camera on the device (separate terminal):
+
+```shell
+rpicam-still --nopreview -t 0 --timelapse 50 --width 640 --height 480 \
+  -o /tmp/frame.jpg 2>/dev/null &
+```
+
+Then run this cell:
+
+```elixir
+# capture_frame = fn ->
+#   Evision.imread("/tmp/frame.jpg", flags: Evision.Constant.cv_IMREAD_COLOR())
+# end
+
+# sample_frame = capture_frame.()
+# {frame_h, frame_w, _} = Evision.Mat.shape(sample_frame)
+# input_shape = {frame_h, frame_w}
+
+# IO.puts("Frame size: #{frame_w}×#{frame_h}")
+```
+
+## Concurrent Inference
+
+Both models run inference in parallel on each frame using `Task.async_stream`.
+The HailoRT `round_robin` scheduler distributes the neural engine time between them.
+Results are displayed side-by-side: **yolov8m** (left) vs **yolov8s** (right).
+
+```elixir
+padded_shape = 640
+score_threshold = 0.5
+fps_target = div(1000, 50)
+
+Kino.animate(fps_target, fn _ ->
+  raw_frame = capture_frame.()
+
+  input_tensor =
+    evision_resize_and_pad.(raw_frame, input_shape, padded_shape)
+    |> Evision.Mat.to_nx()
+    |> Nx.reshape({padded_shape, padded_shape, 3})
+    |> Nx.backend_transfer()
+
+  # Both infer() calls are submitted concurrently; HailoRT schedules them on
+  # the shared neural engine via round_robin.
+  [{:ok, objects_m}, {:ok, objects_s}] =
+    [{model_m, input_m.name, output_m.name}, {model_s, input_s.name, output_s.name}]
+    |> Task.async_stream(
+      fn {model, in_name, out_name} ->
+        {:ok, raw} =
+          NxHailo.infer(
+            model,
+            %{in_name => input_tensor},
+            NxHailo.Parsers.YoloV8,
+            classes: classes,
+            key: out_name
+          )
+
+        raw
+        |> Enum.reject(&(&1.score < score_threshold))
+        |> NxHailo.Parsers.YoloV8.postprocess(input_shape)
+      end,
+      max_concurrency: 2,
+      ordered: true,
+      timeout: 5_000
+    )
+    |> Enum.map(fn {:ok, result} -> {:ok, result} end)
+
+  n_m = length(objects_m)
+  n_s = length(objects_s)
+
+  frame_m = YOLODraw.draw_detected_objects(raw_frame, objects_m, "yolov8m  #{n_m} obj")
+  frame_s = YOLODraw.draw_detected_objects(raw_frame, objects_s, "yolov8s  #{n_s} obj")
+
+  encode = fn mat ->
+    buf = Evision.imencode(".jpg", mat)
+    Kino.Image.new(IO.iodata_to_binary(buf), :jpeg)
+  end
+
+  Kino.Layout.grid([encode.(frame_m), encode.(frame_s)], columns: 2)
+end)
+```
