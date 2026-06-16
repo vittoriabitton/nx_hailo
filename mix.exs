@@ -59,11 +59,6 @@ defmodule NxHailo.MixProject do
   # See the documentation for `Mix` for more info on aliases.
   defp aliases do
     [
-<<<<<<< HEAD
-      setup: ["deps.get"]
-    ]
-  end
-=======
       setup: ["deps.get"],
       "compile.download_models": [&download_yolov8_model/1, &download_resnet_model/1]
     ]
@@ -158,5 +153,4 @@ defmodule NxHailo.MixProject do
       File.write!(marker_filename, "")
     end
   end
->>>>>>> a6e4eab (better es)
 end
