@@ -50,7 +50,8 @@ defmodule NxHailo do
         %Model{
           pipeline:
             %API.Pipeline{
-              input_vstream_infos: input_vstream_infos
+              input_vstream_infos: input_vstream_infos,
+              output_vstream_infos: output_vstream_infos
             } = pipeline
         },
         inputs,
@@ -58,15 +59,23 @@ defmodule NxHailo do
         output_parser_opts \\ []
       )
       when is_map(inputs) and is_atom(output_parser) do
-    # The API.infer function expects string keys for input map.
-    # We can be flexible and convert atom keys here if necessary,
-    # or enforce string keys in the doc/spec for this top-level infer.
-    # For now, assume API.infer's validation handles it or user provides string keys.
+    output_parser_opts = inject_output_opts(output_parser_opts, output_vstream_infos)
+
     with {:ok, inputs} <- encode_inputs(input_vstream_infos, inputs),
          {:ok, results} <- API.infer(pipeline, inputs) do
       output_parser.parse(results, output_parser_opts)
     end
   end
+
+  # For single-output models, automatically supply :key and :quant_info
+  # from the vstream info so callers don't have to extract them manually.
+  defp inject_output_opts(opts, [%{name: name, quant_info: quant_info}]) do
+    opts
+    |> Keyword.put_new(:key, name)
+    |> Keyword.put_new(:quant_info, quant_info)
+  end
+
+  defp inject_output_opts(opts, _), do: opts
 
   defp encode_inputs(input_vstream_infos, inputs) do
     if length(input_vstream_infos) != map_size(inputs) do

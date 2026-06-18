@@ -17,7 +17,7 @@ defmodule NxHailo.Parsers.ImageNetClassifier do
 
   @impl NxHailo.Hailo.OutputParser
   def parse(output_map, opts) when is_list(opts) do
-	opts = Keyword.validate!(opts, [:classes, :key, :quant_info, top_k: 5])
+    opts = Keyword.validate!(opts, [:classes, :key, :quant_info, top_k: 5])
     key = Keyword.fetch!(opts, :key)
     classes = Keyword.fetch!(opts, :classes)
     top_k = Keyword.fetch!(opts, :top_k)
@@ -25,14 +25,19 @@ defmodule NxHailo.Parsers.ImageNetClassifier do
 
     raw = Map.fetch!(output_map, key)
 
-    scores = case quant_info do
-        %{qp_zp: zp, qp_scale: scale} ->
+    # Hailo HEFs for classification typically bake softmax into the graph and
+    # output quantized uint8 probabilities. Only apply softmax when reading raw
+    # float32 logits (i.e. a model that does NOT include a softmax layer).
+    scores =
+      cond do
+        match?(%{qp_zp: _, qp_scale: _}, quant_info) ->
+          %{qp_zp: zp, qp_scale: scale} = quant_info
           for <<x::unsigned-8 <- raw>>, do: (x - zp) * scale
 
-        _ ->
-          for <<x::float-32-little <- raw>>, do: x
+        true ->
+          logits = for <<x::float-32-little <- raw>>, do: x
+          softmax(logits)
       end
-
 
     results =
       scores
@@ -48,5 +53,12 @@ defmodule NxHailo.Parsers.ImageNetClassifier do
       end)
 
     {:ok, results}
+  end
+
+  defp softmax(logits) do
+    max_val = Enum.max(logits)
+    exp_vals = Enum.map(logits, fn x -> :math.exp(x - max_val) end)
+    sum = Enum.sum(exp_vals)
+    Enum.map(exp_vals, fn e -> e / sum end)
   end
 end
