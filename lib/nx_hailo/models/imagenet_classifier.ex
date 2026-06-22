@@ -17,7 +17,7 @@ defmodule NxHailo.Parsers.ImageNetClassifier do
 
   @impl NxHailo.Hailo.OutputParser
   def parse(output_map, opts) when is_list(opts) do
-    opts = Keyword.validate!(opts, [:classes, :key, :quant_info, top_k: 5])
+    opts = Keyword.validate!(opts, [:classes, :key, :quant_info, :format, top_k: 5])
     key = Keyword.fetch!(opts, :key)
     classes = Keyword.fetch!(opts, :classes)
     top_k = Keyword.fetch!(opts, :top_k)

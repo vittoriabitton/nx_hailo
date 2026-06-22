@@ -67,12 +67,13 @@ defmodule NxHailo do
     end
   end
 
-  # For single-output models, automatically supply :key and :quant_info
+  # For single-output models, automatically supply :key, :quant_info, and :format
   # from the vstream info so callers don't have to extract them manually.
-  defp inject_output_opts(opts, [%{name: name, quant_info: quant_info}]) do
+  defp inject_output_opts(opts, [%{name: name, quant_info: quant_info, format: format}]) do
     opts
     |> Keyword.put_new(:key, name)
     |> Keyword.put_new(:quant_info, quant_info)
+    |> Keyword.put_new(:format, format)
   end
 
   defp inject_output_opts(opts, _), do: opts
