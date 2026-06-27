@@ -1,4 +1,4 @@
-# Download Yolo Hailo Models
+# Download resnet Hailo Models
 
 ```elixir
 Mix.install([
@@ -10,7 +10,7 @@ Mix.install([
 
 ## Section
 
-This livebook downloads a compiled model (`.hef`) for **Hailo-8** or **Hailo-10** and generates the COCO class labels
+This livebook downloads a compiled model (`.hef`) for **Hailo-8** or **Hailo-10** and generates the imagenetclass labels
 JSON file into the `nx_hailo` `priv/` directory.
 
 Models are sourced from the [Hailo Model Zoo](https://github.com/hailo-ai/hailo_model_zoo).
@@ -22,6 +22,10 @@ https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/<version>/<
 
 Supported `device` values include: `hailo8`, `hailo8l`, `hailo8r` (Hailo-8 family), and `hailo10` (Hailo-10).
 Browse the model zoo repo to find the version/device/model combination you need.
+
+<!-- livebook:{"break_markdown":true} -->
+
+
 
 ## Configuration
 
@@ -38,7 +42,7 @@ version = "v5.1.0"
 device = "hailo8l"
 
 # Model name (no .hef). Examples: "yolov8m", "yolov8s", "yolov5m"
-model_name = "yolov8m"
+model_name = "resnet_v1_50"
 
 # Build the HEF URL from version, device, and model
 model_hef_url =
@@ -46,7 +50,7 @@ model_hef_url =
 
 # COCO dataset YAML from the Ultralytics repo — provides class name mappings (for YOLO COCO models).
 dataset_yaml_url =
-  "https://raw.githubusercontent.com/ultralytics/ultralytics/refs/heads/main/ultralytics/cfg/datasets/coco.yaml"
+  "https://raw.githubusercontent.com/anishathalye/imagenet-simple-labels/refs/heads/master/imagenet-simple-labels.json"
 
 File.mkdir_p!(download_dir)
 
@@ -99,10 +103,7 @@ else
 
   class_list =
     yaml_string
-    |> YamlElixir.read_from_string!()
-    |> Map.fetch!("names")
-    |> Enum.sort_by(fn {index, _name} -> index end)
-    |> Enum.map(fn {_index, name} -> name end)
+    |> Jason.decode!()
 
   File.write!(classes_json_path, Jason.encode!(class_list))
   IO.puts("Saved #{length(class_list)} classes to #{classes_json_path}")
