@@ -1,59 +1,5 @@
 # NxHailo Zoo
 
-```elixir
-defmodule HailoLivebook.Model do
-  defstruct [model: nil, classes: [], name: "", output_key: nil, shape: nil, quant_info: nil, format: nil]
-end
-
-defmodule HailoLivebook.Loader do
-  def load_model(model_name) do
-    priv = to_string(:code.priv_dir(:nx_hailo))
-    {:ok, hailo_resnet_model} = NxHailo.load(model_name)
-
-    [%{name: resnet_name}] = hailo_resnet_model.pipeline.input_vstream_infos
-    [%{name: resnet_output_key, quant_info: quant_info, format: format}] = hailo_resnet_model.pipeline.output_vstream_infos
-
-        resnet_classes =
-      File.read!("#{priv}/imagenet_class_index.json")
-      |> Jason.decode!()
-      |> Enum.with_index()
-      |> Map.new(fn {v, k} -> {k, v} end)
-    
-    
-    %HailoLivebook.Model{model: hailo_resnet_model,
-      classes: resnet_classes, 
-      name: resnet_name,
-      output_key: resnet_output_key,
-      shape: {224, 224},
-      quant_info: quant_info,
-      format: format
-      }
-  end
-
-  def transfer_and_infer(image, model) do
-    {h, w} = model.shape
-    new_shape = {h, w, 3}
-    input_tensor =
-    image
-    |> Evision.Mat.to_nx()
-    |> Nx.reshape(new_shape)
-    |> Nx.backend_transfer()
-
-  {:ok, raw_objects} =
-    NxHailo.infer(
-      model.model,
-      %{model.name => input_tensor},
-      NxHailo.Parsers.ImageNetClassifier,
-      classes: model.classes,
-      key: model.output_key
-    ) 
-    
-    {:ok, raw_objects}
-  end
-end
-
-```
-
 ## Setup
 
 ```elixir
@@ -89,6 +35,68 @@ defmodule Livebook.ImageLoader do
     padded_image
   end
 end
+```
+
+```elixir
+defmodule HailoLivebook.Model do
+  defstruct [model: nil, 
+    classes: [], 
+    name: "",
+    output_key: nil, 
+    shape: nil, 
+    quant_info: nil, 
+    format: nil,
+  parser: nil]
+end
+
+defmodule HailoLivebook.Loader do
+  def load_model(model_name, shape, class_file, parser) do
+    {:ok, hailo_resnet_model} = NxHailo.load(model_name)
+
+    [%{name: resnet_name}] = hailo_resnet_model.pipeline.input_vstream_infos
+    [%{name: resnet_output_key, quant_info: quant_info, format: format}] = hailo_resnet_model.pipeline.output_vstream_infos
+
+        resnet_classes =
+          class_file
+      |> File.read!()
+      |> Jason.decode!()
+      |> Enum.with_index()
+      |> Map.new(fn {v, k} -> {k, v} end)
+    
+    
+    %HailoLivebook.Model{model: hailo_resnet_model,
+      classes: resnet_classes, 
+      name: resnet_name,
+      output_key: resnet_output_key,
+      shape: shape,
+      quant_info: quant_info,
+      format: format,
+      parser: parser
+      }
+  end
+
+  def transfer_and_infer(image, model) do
+    {h, w} = model.shape
+    new_shape = {h, w, 3}
+    input_tensor =
+    image
+    |> Evision.Mat.to_nx()
+    |> Nx.reshape(new_shape)
+    |> Nx.backend_transfer()
+
+  {:ok, raw_objects} =
+    NxHailo.infer(
+      model.model,
+      %{model.name => input_tensor},
+      model.parser,
+      classes: model.classes,
+      key: model.output_key
+    ) 
+    
+    {:ok, raw_objects}
+  end
+end
+
 ```
 
 This notebook runs inference on a Hailo device via Livebook's **Attached Node** runtime. The node must be running on the device before connecting.
@@ -199,33 +207,69 @@ defmodule YOLODraw do
 end
 ```
 
-## Inference
+## Model Zoo
+
+<!-- livebook:{"reevaluate_automatically":true} -->
 
 ```elixir
-pname = Path.absname("priv/test_image2.jpg") |> IO.inspect
-File.exists?(pname)  |> IO.inspect
+form = Kino.Control.form([file: Kino.Input.file("File")], report_changes: true)
+full_frame = Kino.Frame.new()
+Kino.Frame.append(full_frame, form)
+
 priv = to_string(:code.priv_dir(:nx_hailo))
-model_path = "#{priv}/resnet_v1_50.hef"
+yolo_model = HailoLivebook.Loader.load_model("#{priv}/yolov8m.hef", 
+  {640, 640}, 
+  "#{priv}/yolov8m_classes.json",
+NxHailo.Parsers.YoloV8)
+resnet_model = HailoLivebook.Loader.load_model("#{priv}/resnet_v1_50.hef", 
+  {224, 224},
+  "#{priv}/imagenet_class_index.json", NxHailo.Parsers.ImageNetClassifier)
 
-model = HailoLivebook.Loader.load_model(model_path)
 
-image = Livebook.ImageLoader.load_and_size_image(pname, model)
-{:ok, raw_objects} = HailoLivebook.Loader.transfer_and_infer(image, model)
+form
+|> Kino.Control.stream()
+|> Kino.listen(fn event ->
+    path = Kino.Input.file_path(event.data.file.file_ref)
+  
+  resnt_image = Livebook.ImageLoader.load_and_size_image(path, resnet_model)
+  yolo_image = Livebook.ImageLoader.load_and_size_image(path, yolo_model)
+ 
+  resnet_image_frame = Kino.Frame.new()
+  Kino.Frame.append(resnet_image_frame, resnt_image)
+  yolo_image_frame = Kino.Frame.new()
+  yolo_result_frame = Kino.Frame.new()
+  Kino.Frame.append(yolo_image_frame, yolo_image)
+
+  {:ok, resnet_raw_objects} = HailoLivebook.Loader.transfer_and_infer(resnt_image, resnet_model)
+  {:ok, yolo_raw_objects} = HailoLivebook.Loader.transfer_and_infer(yolo_image, yolo_model)
 
   detected_objects =
-    raw_objects
-    |> Enum.reject(&(&1.score < 0.005))
-    |> Enum.reduce("""
-    """, fn i, a ->
-      a <> """
-      | #{i.class_name} |  #{i.score}   |  #{i.class_id} |           
-      """
-      end)
+    resnet_raw_objects
+    |> Enum.reject(fn i ->  i.score < 0.05 end)
+    |> Enum.map(fn i ->  "| #{i.class_name} |#{i.score} |#{i.class_id} | " end)
 
-Kino.Markdown.new(detected_objects)
+  detected_objects_2 =
+    yolo_raw_objects
+    |> Enum.reject(fn i ->  i.score < 0.05 end)
+    |> NxHailo.Parsers.YoloV8.postprocess(yolo_model.shape)
 
-```
+    yolo_text = detected_objects_2
+    |> Enum.map(fn i ->  "| #{i.class_name} |#{i.score} |#{i.class_id} | " end)
 
-```elixir
+  new_answers = YOLODraw.draw_detected_objects(yolo_image, detected_objects_2, "")
+  Kino.Frame.append(yolo_result_frame, new_answers)
+
+  grid = Kino.Layout.grid([resnet_image_frame, Kino.Markdown.new(detected_objects),  Kino.Markdown.new(yolo_text)], columns: 3)
+
+  Kino.Frame.clear(full_frame)
+  Kino.Frame.append(full_frame, form)
+  Kino.Frame.append(full_frame, grid)
+  Kino.Frame.append(full_frame, yolo_result_frame)
+
+    end)
+
+
+  Kino.render(full_frame)
+:ok
 
 ```
