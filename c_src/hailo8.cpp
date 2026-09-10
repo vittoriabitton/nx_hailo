@@ -6,6 +6,7 @@
 #include <chrono>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -27,30 +28,15 @@ struct InferPipelineResource {
   std::shared_ptr<hailort::InferVStreams> pipeline;
   std::shared_ptr<hailort::ConfiguredNetworkGroup>
       network_group; // Keep a reference to network_group
+  // InferVStreams::infer() is not reentrant, and one resource is shared by
+  // every Elixir process holding the model, so infer/2 takes this lock.
+  std::mutex infer_lock;
 };
 
-// Destructor for VDeviceResource
-void vdevice_resource_dtor(ErlNifEnv *env, void *obj) {
-  auto *res = static_cast<VDeviceResource *>(obj);
-  res->vdevice.reset();
-  delete res;
-}
-
-// Destructor for NetworkGroupResource
-void network_group_resource_dtor(ErlNifEnv *env, void *obj) {
-  auto *res = static_cast<NetworkGroupResource *>(obj);
-  res->network_group.reset();
-  res->vdevice.reset();
-  delete res;
-}
-
-// Destructor for InferPipelineResource
-void infer_pipeline_resource_dtor(ErlNifEnv *env, void *obj) {
-  auto *res = static_cast<InferPipelineResource *>(obj);
-  res->pipeline.reset();
-  res->network_group.reset();
-  delete res;
-}
+// The members above are all owning smart pointers, so ~T() — which fine calls
+// when the resource is garbage collected — is enough to release everything.
+// A resource only needs an explicit `destructor(ErlNifEnv *)` member when it
+// has to run something before its members are torn down.
 
 // Define resource types using FINE macros
 FINE_RESOURCE(VDeviceResource);
@@ -122,8 +108,9 @@ fine::Atom format_flags_to_atom(hailo_format_flags_t flags) {
       "unknown_flags"); // Default if no specific known flag matches
 }
 
-// NIF function to create a VDevice
-fine::Term create_vdevice(ErlNifEnv *env) {
+// Helper, not a NIF: create_vdevice/1 below falls back to it when no options
+// are given.
+static fine::Term create_default_vdevice(ErlNifEnv *env) {
   auto vdevice_expected = hailort::VDevice::create();
   if (!vdevice_expected) {
     return fine_error_string(env,
@@ -134,57 +121,6 @@ fine::Term create_vdevice(ErlNifEnv *env) {
 
   auto resource = fine::make_resource<VDeviceResource>();
   resource->vdevice = std::move(vdevice);
-  return fine_ok(env, resource);
-}
-
-// NIF function to configure a network group using an existing VDevice
-fine::Term configure_network_group(ErlNifEnv *env,
-                                   fine::Term vdevice_resource_term,
-                                   fine::Term hef_path_term) {
-  fine::ResourcePtr<VDeviceResource> vdevice_res;
-  try {
-    vdevice_res = fine::decode<fine::ResourcePtr<VDeviceResource>>(
-        env, vdevice_resource_term);
-  } catch (const std::exception &e) {
-    return fine_error_string(env, "Invalid VDevice resource");
-  }
-
-  std::string hef_path;
-  try {
-    hef_path = fine::decode<std::string>(env, hef_path_term);
-  } catch (const std::exception &e) {
-    return fine_error_string(env, "Invalid HEF file path");
-  }
-
-  auto hef = hailort::Hef::create(hef_path);
-  if (!hef) {
-    return fine_error_string(env, "Failed to load HEF file: " +
-                                      std::to_string(hef.status()));
-  }
-
-  auto configure_params =
-      vdevice_res->vdevice->create_configure_params(hef.value());
-  if (!configure_params) {
-    return fine_error_string(env,
-                             "Failed to create configure params: " +
-                                 std::to_string(configure_params.status()));
-  }
-
-  auto network_groups =
-      vdevice_res->vdevice->configure(hef.value(), configure_params.value());
-  if (!network_groups) {
-    return fine_error_string(env, "Failed to configure network groups: " +
-                                      std::to_string(network_groups.status()));
-  }
-
-  if (network_groups->size() != 1) {
-    return fine_error_string(env, "Invalid number of network groups: " +
-                                      std::to_string(network_groups->size()));
-  }
-
-  auto resource = fine::make_resource<NetworkGroupResource>();
-  resource->network_group = std::move(network_groups->at(0));
-  resource->vdevice = vdevice_res->vdevice;
   return fine_ok(env, resource);
 }
 
@@ -232,7 +168,6 @@ ERL_NIF_TERM
 build_detailed_vstream_info_map(ErlNifEnv *env,
                                 const hailo_vstream_info_t &vstream_info) {
   ERL_NIF_TERM map_term = enif_make_new_map(env);
-  uint32_t calculated_frame_size = 0;
 
   enif_make_map_put(env, map_term, fine::encode(env, fine::Atom("name")),
                     fine::encode(env, std::string(vstream_info.name)),
@@ -295,31 +230,6 @@ build_detailed_vstream_info_map(ErlNifEnv *env,
                       nms_shape_map_erl, &map_term);
     enif_make_map_put(env, map_term, fine::encode(env, fine::Atom("shape")),
                       fine::encode(env, fine::Atom("nil")), &map_term);
-
-    uint32_t num_detections_for_size_calc = 0;
-    if (vstream_info.format.order == HAILO_FORMAT_ORDER_HAILO_NMS_BY_CLASS ||
-        vstream_info.format.order == HAILO_FORMAT_ORDER_HAILO_NMS_ON_CHIP) {
-      num_detections_for_size_calc =
-          vstream_info.nms_shape.number_of_classes *
-          vstream_info.nms_shape.max_bboxes_per_class;
-    } else if (vstream_info.format.order ==
-               HAILO_FORMAT_ORDER_HAILO_NMS_BY_SCORE) {
-      num_detections_for_size_calc = vstream_info.nms_shape.max_bboxes_total;
-    } else {
-      num_detections_for_size_calc =
-          vstream_info.nms_shape.number_of_classes *
-          vstream_info.nms_shape.max_bboxes_per_class;
-    }
-    uint32_t elements_per_detection = 6;
-    if (vstream_info.format.type == HAILO_FORMAT_TYPE_FLOAT32) {
-      calculated_frame_size =
-          num_detections_for_size_calc * elements_per_detection * sizeof(float);
-    } else if (vstream_info.format.type == HAILO_FORMAT_TYPE_UINT8) {
-      calculated_frame_size = num_detections_for_size_calc *
-                              elements_per_detection * sizeof(uint8_t);
-    } else {
-      calculated_frame_size = 0;
-    }
   } else {
     ERL_NIF_TERM shape_map_erl = enif_make_new_map(env);
     enif_make_map_put(
@@ -338,9 +248,13 @@ build_detailed_vstream_info_map(ErlNifEnv *env,
                       shape_map_erl, &map_term);
     enif_make_map_put(env, map_term, fine::encode(env, fine::Atom("nms_shape")),
                       fine::encode(env, fine::Atom("nil")), &map_term);
-    calculated_frame_size = hailort::HailoRTCommon::get_frame_size(
-        vstream_info.shape, vstream_info.format);
   }
+
+  // This overload understands both layouts, including the per-class detection
+  // counts interleaved into an NMS frame. Computing the NMS size by hand as
+  // detections * 6 * sizeof(type) ignores those counts and overstates it.
+  uint32_t calculated_frame_size =
+      hailort::HailoRTCommon::get_frame_size(vstream_info, vstream_info.format);
 
   enif_make_map_put(
       env, map_term, fine::encode(env, fine::Atom("frame_size")),
@@ -564,6 +478,8 @@ fine::Term infer(ErlNifEnv *env, fine::Term pipeline_term,
     output_data_mem_views.emplace(
         name, hailort::MemoryView(output_buffer.data(), output_buffer.size()));
   }
+  std::lock_guard<std::mutex> guard(pipeline_res->infer_lock);
+
   hailo_status status = pipeline_res->pipeline->infer(
       input_data_mem_views, output_data_mem_views, frames_count);
   if (status != HAILO_SUCCESS) {
@@ -589,7 +505,7 @@ fine::Term infer(ErlNifEnv *env, fine::Term pipeline_term,
 fine::Term create_vdevice_opts(ErlNifEnv *env, fine::Term opts_term) {
   ERL_NIF_TERM val;
   if (!enif_get_map_value(env, opts_term, fine::encode(env, fine::Atom("scheduling_algorithm")), &val)) {
-    return create_vdevice(env);
+    return create_default_vdevice(env);
   }
 
   fine::Atom alg = fine::decode<fine::Atom>(env, fine::Term(val));
@@ -701,20 +617,24 @@ fine::Term hailo_version(ErlNifEnv *env) {
   return fine::encode(env, fine::Atom("hailo8"));
 }
 
-// Register NIF functions
+// Register NIF functions.
+//
+// Anything that reaches the device — opening it, loading a HEF, building
+// vstreams, running a frame — blocks for far longer than a scheduler slice is
+// meant to last, so it runs on a dirty IO scheduler. Everything else only reads
+// memory the NIF already holds and stays on a regular scheduler.
 FINE_NIF(hailo_version, 0);
-FINE_NIF(create_pipeline, 1);
-FINE_NIF(get_output_vstream_infos_from_pipeline, 1);
-// infer: ERL_NIF_DIRTY_JOB_IO_BOUND (flags=2).
-// Note: InferVStreams::infer() is not reentrant per-pipeline; concurrent
-// Elixir processes can call infer() on different pipelines sharing the same
-// VDevice (with ROUND_ROBIN scheduler), but a single pipeline serializes.
-FINE_NIF(infer, 2);
-FINE_NIF(get_input_vstream_infos_from_ng, 1);
-FINE_NIF(get_output_vstream_infos_from_ng, 1);
-FINE_NIF(get_input_vstream_infos_from_pipeline, 1);
+FINE_NIF(get_input_vstream_infos_from_ng, 0);
+FINE_NIF(get_output_vstream_infos_from_ng, 0);
+FINE_NIF(get_input_vstream_infos_from_pipeline, 0);
+FINE_NIF(get_output_vstream_infos_from_pipeline, 0);
 FINE_NIF(set_scheduler_timeout, 0);
 FINE_NIF(set_scheduler_threshold, 0);
+FINE_NIF(create_pipeline, ERL_NIF_DIRTY_JOB_IO_BOUND);
+// Calls on one pipeline serialize on its lock; calls on different pipelines
+// sharing a round-robin VDevice run concurrently and are interleaved by the
+// HailoRT scheduler.
+FINE_NIF(infer, ERL_NIF_DIRTY_JOB_IO_BOUND);
 
 // create_vdevice/1 and configure_network_group/3 use custom C++ names so
 // they are registered manually below (api.ex always delegates through these).
@@ -723,7 +643,8 @@ static ERL_NIF_TERM create_vdevice_opts_nif(ErlNifEnv *env, int argc,
   return fine::nif(env, argc, argv, create_vdevice_opts);
 }
 static auto __nif_reg_vd1 = fine::Registration::register_nif(
-    {"create_vdevice", fine::nif_arity(create_vdevice_opts), create_vdevice_opts_nif, 0});
+    {"create_vdevice", fine::nif_arity(create_vdevice_opts), create_vdevice_opts_nif,
+     ERL_NIF_DIRTY_JOB_IO_BOUND});
 
 static ERL_NIF_TERM configure_network_group_opts_nif(ErlNifEnv *env, int argc,
                                                       const ERL_NIF_TERM argv[]) {

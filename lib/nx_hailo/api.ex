@@ -1,256 +1,222 @@
 defmodule NxHailo.API do
-  @moduledoc false
-  # Internal API for interacting with Hailo devices.
+  @moduledoc """
+  Lower-level access to HailoRT, for setups `NxHailo.load/2` cannot express.
 
-  alias NxHailo.NIF
-  alias NxHailo.API.VDevice
+  `NxHailo.load/2` covers the common case of one model on the device. Reach for
+  this module when you need several models sharing one accelerator, since that
+  means creating the VDevice yourself and configuring each network group on it:
+
+      {:ok, vdevice} = NxHailo.API.create_vdevice(%{scheduling_algorithm: :round_robin})
+
+      {:ok, ng} = NxHailo.API.configure_network_group(vdevice, "priv/yolov8m.hef")
+      {:ok, pipeline} = NxHailo.API.create_pipeline(ng)
+
+  A VDevice stands for the physical accelerator, and HailoRT only lets one exist
+  per VM, so `create_vdevice/1` opens it once and hands the same one to every
+  later caller. See that function for what happens when a second caller asks for
+  different options.
+  """
+
   alias NxHailo.API.NetworkGroup
   alias NxHailo.API.Pipeline
+  alias NxHailo.API.VDevice
   alias NxHailo.API.VStreamInfo
+  alias NxHailo.Input
+  alias NxHailo.NIF
+
+  @vdevice_key {__MODULE__, :vdevice}
+
+  @typedoc """
+  Options for `create_vdevice/1`.
+
+    * `:scheduling_algorithm` - `:round_robin` lets HailoRT interleave requests
+      from every network group configured on this VDevice, which is what makes
+      concurrent models possible. `:none` runs them in submission order.
+  """
+  @type vdevice_opts :: %{optional(:scheduling_algorithm) => :round_robin | :none}
+
+  @typedoc """
+  Options for `configure_network_group/3`.
+
+    * `:scheduler_timeout_ms` - dispatch to the accelerator after this many
+      milliseconds even if `:scheduler_threshold` frames have not queued up yet
+    * `:scheduler_threshold` - how many frames to queue before dispatching
+
+  Both only matter when the VDevice was created with `:round_robin`; they are
+  the knobs that trade latency for throughput between competing models.
+  """
+  @type network_group_opts :: %{
+          optional(:scheduler_timeout_ms) => non_neg_integer(),
+          optional(:scheduler_threshold) => non_neg_integer()
+        }
 
   @doc """
-  Creates a new Hailo Virtual Device.
+  Opens the accelerator, or returns the one already open.
 
-  Returns `{:ok, %VDevice{}}` or `{:error, reason}`.
+  The first call decides the options for the lifetime of the VM. A later call
+  asking for different ones returns an error rather than opening a second
+  VDevice, which HailoRT would refuse anyway. Call `close_vdevice/0` first if
+  you really do need to reopen it with different options.
   """
-  def create_vdevice(), do: create_vdevice(%{})
-
-  @doc """
-  Creates a new Hailo Virtual Device with scheduling configuration.
-
-  Options:
-    - `:scheduling_algorithm` — `:round_robin` or `:none`; controls the
-      HailoRT scheduler for multi-model concurrency on the shared VDevice
-
-  Returns `{:ok, %VDevice{}}` or `{:error, reason}`.
-  """
-  def create_vdevice(opts) when is_map(opts) do
-    cached = :persistent_term.get({__MODULE__, :vdevice}, nil)
-
-    # Only use the cached vdevice if no options were given; a caller providing
-    # opts (e.g. scheduling_algorithm) wants a vdevice configured accordingly.
-    if cached && opts == %{} do
-      {:ok, cached}
-    else
-      case NIF.create_vdevice(opts) do
-        {:ok, ref} ->
-          dev = %VDevice{ref: ref}
-          # Only cache the default (no-opts) vdevice; opts-specific vdevices
-          # are caller-managed to avoid hiding scheduling config mismatches.
-          if opts == %{}, do: :persistent_term.put({__MODULE__, :vdevice}, dev)
-          {:ok, dev}
-
-        error ->
-          error
-      end
+  @spec create_vdevice(vdevice_opts()) :: {:ok, VDevice.t()} | {:error, String.t()}
+  def create_vdevice(opts \\ %{}) when is_map(opts) do
+    case :persistent_term.get(@vdevice_key, nil) do
+      nil -> open_vdevice(opts)
+      cached -> reuse_vdevice(cached, opts)
     end
   end
 
+  # Two processes racing to open the device would each get one, so take a lock
+  # and look again inside it.
+  defp open_vdevice(opts) do
+    :global.trans({@vdevice_key, self()}, fn ->
+      case :persistent_term.get(@vdevice_key, nil) do
+        nil ->
+          with {:ok, ref} <- NIF.create_vdevice(opts) do
+            vdevice = %VDevice{ref: ref}
+            :persistent_term.put(@vdevice_key, {opts, vdevice})
+            {:ok, vdevice}
+          end
+
+        cached ->
+          reuse_vdevice(cached, opts)
+      end
+    end)
+  end
+
+  defp reuse_vdevice({opts, vdevice}, opts), do: {:ok, vdevice}
+
+  defp reuse_vdevice({open_opts, _vdevice}, opts) do
+    {:error,
+     "the accelerator is already open with #{inspect(open_opts)}, so it cannot also be " <>
+       "opened with #{inspect(opts)}. Call NxHailo.API.close_vdevice/0 first, or pass the " <>
+       "options on whichever call runs first"}
+  end
+
   @doc """
-  Configures a network group on the given VDevice using a HEF file.
+  Forgets the open VDevice so the next `create_vdevice/1` opens a fresh one.
 
-  Parameters:
-    - `vdevice`: The `%VDevice{}` struct.
-    - `hef_path`: The path to the HEF file (string).
-
-  Returns `{:ok, %NetworkGroup{}}` or `{:error, reason}`.
+  The accelerator itself is released once the last model configured on it is
+  garbage collected, so anything still holding a `NxHailo.Model` keeps working.
   """
-  def configure_network_group(%VDevice{} = vdevice, hef_path) when is_binary(hef_path),
-    do: configure_network_group(vdevice, hef_path, %{})
+  @spec close_vdevice() :: :ok
+  def close_vdevice do
+    :persistent_term.erase(@vdevice_key)
+    :ok
+  end
 
   @doc """
-  Configures a network group on the given VDevice using a HEF file, with scheduling options.
-
-  Parameters:
-    - `vdevice`: The `%VDevice{}` struct.
-    - `hef_path`: The path to the HEF file (string).
-    - `opts`: A map of scheduling options.
-
-  Options (both targets; all optional):
-    - `:scheduler_timeout_ms` — integer milliseconds; scheduler dispatches after
-      this timeout even if the frame threshold has not been reached
-    - `:scheduler_threshold` — integer frame count; minimum frames before
-      the scheduler dispatches to hardware
-
-  Note: `:scheduling_algorithm` (`:round_robin` | `:none`) is a VDevice-level
-  setting on both hailo8 and hailo10 — pass it to `create_vdevice/1` instead.
-
-  Returns `{:ok, %NetworkGroup{}}` or `{:error, reason}`.
+  Loads a HEF onto `vdevice` and returns the network group it defines.
   """
-  def configure_network_group(%VDevice{ref: vdevice_ref} = _vdevice, hef_path, opts)
+  @spec configure_network_group(VDevice.t(), Path.t(), network_group_opts()) ::
+          {:ok, NetworkGroup.t()} | {:error, String.t()}
+  def configure_network_group(%VDevice{ref: vdevice_ref}, hef_path, opts \\ %{})
       when is_binary(hef_path) and is_map(opts) do
     with {:ok, ng_ref} <- NIF.configure_network_group(vdevice_ref, hef_path, opts),
-         {:ok, raw_input_infos} <- NIF.get_input_vstream_infos_from_ng(ng_ref),
-         {:ok, raw_output_infos} <- NIF.get_output_vstream_infos_from_ng(ng_ref) do
-      input_infos = Enum.map(raw_input_infos, &VStreamInfo.from_map/1)
-      output_infos = Enum.map(raw_output_infos, &VStreamInfo.from_map/1)
-
+         {:ok, inputs} <- vstream_infos(&NIF.get_input_vstream_infos_from_ng/1, ng_ref),
+         {:ok, outputs} <- vstream_infos(&NIF.get_output_vstream_infos_from_ng/1, ng_ref) do
       {:ok,
        %NetworkGroup{
          ref: ng_ref,
          vdevice_ref: vdevice_ref,
-         input_vstream_infos: input_infos,
-         output_vstream_infos: output_infos
+         input_vstream_infos: inputs,
+         output_vstream_infos: outputs
        }}
-    else
-      error -> error
     end
   end
 
   @doc """
-  Creates an inference pipeline from a configured network group.
-
-  Parameters:
-    - `network_group`: The `%NetworkGroup{}` struct.
-
-  Returns `{:ok, %Pipeline{}}` or `{:error, reason}`.
+  Builds the inference pipeline that `infer/2` runs frames through.
   """
-  def create_pipeline(%NetworkGroup{ref: ng_ref} = _network_group) do
+  @spec create_pipeline(NetworkGroup.t()) :: {:ok, Pipeline.t()} | {:error, String.t()}
+  def create_pipeline(%NetworkGroup{ref: ng_ref}) do
     with {:ok, pipeline_ref} <- NIF.create_pipeline(ng_ref),
-         {:ok, raw_input_infos} <- NIF.get_input_vstream_infos_from_pipeline(pipeline_ref),
-         {:ok, raw_output_infos} <- NIF.get_output_vstream_infos_from_pipeline(pipeline_ref) do
-      input_infos = Enum.map(raw_input_infos, &VStreamInfo.from_map/1)
-      output_infos = Enum.map(raw_output_infos, &VStreamInfo.from_map/1)
-
+         {:ok, inputs} <-
+           vstream_infos(&NIF.get_input_vstream_infos_from_pipeline/1, pipeline_ref),
+         {:ok, outputs} <-
+           vstream_infos(&NIF.get_output_vstream_infos_from_pipeline/1, pipeline_ref) do
       {:ok,
        %Pipeline{
          ref: pipeline_ref,
          network_group_ref: ng_ref,
-         input_vstream_infos: input_infos,
-         output_vstream_infos: output_infos
+         input_vstream_infos: inputs,
+         output_vstream_infos: outputs
        }}
     end
   end
 
   @doc """
-  Sets the scheduler timeout on a configured network group (hailo8 only).
+  Runs one frame through `pipeline`.
 
-  The scheduler dispatches inference to hardware after `timeout_ms` milliseconds
-  even if the frame threshold has not been reached.
+  `input_data` maps input vstream names to raw binaries — `NxHailo.infer/4` is
+  the version that takes tensors. Returns a map of output vstream names to raw
+  binaries, which a `NxHailo.OutputParser` turns into something meaningful.
 
-  On hailo10, returns `{:error, reason}` — pass `:scheduler_timeout_ms` in
-  `configure_network_group/3` opts instead.
-
-  Returns `:ok` or `{:error, reason}`.
+  Calls on one pipeline are serialized; calls on separate pipelines sharing a
+  round-robin VDevice run concurrently.
   """
+  @spec infer(Pipeline.t(), %{optional(String.t()) => binary()}) ::
+          {:ok, %{optional(String.t()) => binary()}} | {:error, String.t()}
+  def infer(%Pipeline{ref: pipeline_ref, input_vstream_infos: infos}, input_data)
+      when is_map(input_data) do
+    # The NIF checks the size of every binary it is handed, so this only has to
+    # catch a caller naming the wrong vstream.
+    with :ok <- Input.validate_names(infos, input_data) do
+      NIF.infer(pipeline_ref, input_data)
+    end
+  end
+
+  @doc """
+  Returns the input vstreams of a network group or pipeline.
+  """
+  @spec get_input_vstream_infos(NetworkGroup.t() | Pipeline.t()) ::
+          {:ok, [VStreamInfo.t()]} | {:error, String.t()}
+  def get_input_vstream_infos(%NetworkGroup{ref: ref}),
+    do: vstream_infos(&NIF.get_input_vstream_infos_from_ng/1, ref)
+
+  def get_input_vstream_infos(%Pipeline{ref: ref}),
+    do: vstream_infos(&NIF.get_input_vstream_infos_from_pipeline/1, ref)
+
+  @doc """
+  Returns the output vstreams of a network group or pipeline.
+  """
+  @spec get_output_vstream_infos(NetworkGroup.t() | Pipeline.t()) ::
+          {:ok, [VStreamInfo.t()]} | {:error, String.t()}
+  def get_output_vstream_infos(%NetworkGroup{ref: ref}),
+    do: vstream_infos(&NIF.get_output_vstream_infos_from_ng/1, ref)
+
+  def get_output_vstream_infos(%Pipeline{ref: ref}),
+    do: vstream_infos(&NIF.get_output_vstream_infos_from_pipeline/1, ref)
+
+  @doc """
+  Sets the scheduler timeout on an already configured network group.
+
+  Only the hailo8 backend supports this; on hailo10 the timeout has to be set
+  while the model is configured, so pass `:scheduler_timeout_ms` to
+  `configure_network_group/3` instead. That option works on both backends and is
+  the one to reach for.
+  """
+  @spec set_scheduler_timeout(NetworkGroup.t(), non_neg_integer()) :: :ok | {:error, String.t()}
   def set_scheduler_timeout(%NetworkGroup{ref: ng_ref}, timeout_ms)
       when is_integer(timeout_ms) and timeout_ms >= 0 do
     NIF.set_scheduler_timeout(ng_ref, timeout_ms)
   end
 
   @doc """
-  Sets the scheduler frame threshold on a configured network group (hailo8 only).
+  Sets the scheduler frame threshold on an already configured network group.
 
-  The scheduler dispatches inference to hardware once `threshold` frames have
-  been queued.
-
-  On hailo10, returns `{:error, reason}` — pass `:scheduler_threshold` in
-  `configure_network_group/3` opts instead.
-
-  Returns `:ok` or `{:error, reason}`.
+  Carries the same hailo8-only caveat as `set_scheduler_timeout/2`; prefer
+  `:scheduler_threshold` in `configure_network_group/3`.
   """
+  @spec set_scheduler_threshold(NetworkGroup.t(), non_neg_integer()) :: :ok | {:error, String.t()}
   def set_scheduler_threshold(%NetworkGroup{ref: ng_ref}, threshold)
       when is_integer(threshold) and threshold >= 0 do
     NIF.set_scheduler_threshold(ng_ref, threshold)
   end
 
-  @doc """
-  Runs inference on the given pipeline with the provided input data.
-
-  Parameters:
-    - `pipeline`: The `%Pipeline{}` struct.
-    - `input_data`: A map where keys are input vstream names (strings)
-      and values are binaries containing the input data.
-      Example: `%{ "input_layer1" => <<...>> }`
-
-  Returns `{:ok, output_data_map}` or `{:error, reason}`.
-  The `output_data_map` is a map of output vstream names (strings) to binaries.
-  """
-  def infer(
-        %Pipeline{ref: pipeline_ref, input_vstream_infos: expected_infos} = _pipeline,
-        input_data
-      )
-      when is_map(input_data) do
-    case validate_input_data(expected_infos, input_data) do
-      :ok ->
-        NIF.infer(pipeline_ref, input_data)
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
-  @doc """
-  Retrieves input vstream information for a configured resource.
-  Accepts either a `%NetworkGroup{}` or an `%Pipeline{}` struct.
-  """
-  def get_input_vstream_infos(%NetworkGroup{ref: ng_ref}) do
-    case NIF.get_input_vstream_infos_from_ng(ng_ref) do
-      {:ok, raw_infos} -> {:ok, Enum.map(raw_infos, &VStreamInfo.from_map/1)}
-      error -> error
-    end
-  end
-
-  def get_input_vstream_infos(%Pipeline{ref: pipeline_ref}) do
-    case NIF.get_input_vstream_infos_from_pipeline(pipeline_ref) do
-      {:ok, raw_infos} -> {:ok, Enum.map(raw_infos, &VStreamInfo.from_map/1)}
-      error -> error
-    end
-  end
-
-  @doc """
-  Retrieves output vstream information for a configured resource.
-  Accepts either a `%NetworkGroup{}` or an `%Pipeline{}` struct.
-  """
-  def get_output_vstream_infos(%NetworkGroup{ref: ng_ref}) do
-    case NIF.get_output_vstream_infos_from_ng(ng_ref) do
-      {:ok, raw_infos} -> {:ok, Enum.map(raw_infos, &VStreamInfo.from_map/1)}
-      error -> error
-    end
-  end
-
-  def get_output_vstream_infos(%Pipeline{ref: pipeline_ref}) do
-    case NIF.get_output_vstream_infos_from_pipeline(pipeline_ref) do
-      {:ok, raw_infos} -> {:ok, Enum.map(raw_infos, &VStreamInfo.from_map/1)}
-      error -> error
-    end
-  end
-
-  defp validate_input_data(expected_infos, input_data) do
-    expected_names = Enum.map(expected_infos, & &1.name)
-    provided_names = Map.keys(input_data)
-
-    missing_streams =
-      Enum.filter(expected_names, fn name -> not Enum.member?(provided_names, name) end)
-
-    extra_streams =
-      Enum.filter(provided_names, fn name -> not Enum.member?(expected_names, name) end)
-
-    cond do
-      length(missing_streams) > 0 ->
-        {:error, "Missing input for vstreams: #{inspect(missing_streams)}"}
-
-      length(extra_streams) > 0 ->
-        {:error, "Extra input for vstreams: #{inspect(extra_streams)}"}
-
-      true ->
-        Enum.reduce_while(expected_infos, :ok, fn expected_info, _acc ->
-          stream_name = expected_info.name
-          expected_size = expected_info.frame_size
-          actual_data = input_data[stream_name]
-
-          unless is_binary(actual_data) do
-            {:halt, {:error, "Input data for vstream '#{stream_name}' must be a binary."}}
-          else
-            if byte_size(actual_data) != expected_size do
-              {:halt,
-               {:error,
-                "Invalid input data size for vstream '#{stream_name}'. Expected: #{expected_size}, Got: #{byte_size(actual_data)}"}}
-            else
-              {:cont, :ok}
-            end
-          end
-        end)
+  defp vstream_infos(nif_fun, ref) do
+    with {:ok, raw_infos} <- nif_fun.(ref) do
+      {:ok, Enum.map(raw_infos, &VStreamInfo.from_map/1)}
     end
   end
 end

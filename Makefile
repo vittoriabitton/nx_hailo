@@ -1,9 +1,6 @@
 # Environment variables passed via elixir_make:
 #   ERTS_INCLUDE_DIR, MIX_APP_PATH, FINE_INCLUDE_DIR, HAILO_TARGET
 #   HAILORT_INCLUDE_DIR, HAILORT_LIB_DIR (optional, for finding HailoRT headers/libs)
-# HAILO_TARGET = hailo10 (default) or hailo8
-#   hailo10 -> c_src/hailo10.cpp (HailoRT v5 / InferModel)
-#   hailo8  -> c_src/hailo8.cpp  (HailoRT hailo8 branch / VDevice)
 #
 # HailoRT must be installed. If not in default search paths, set:
 #   HAILORT_INCLUDE_DIR = directory containing "hailo/" (e.g. /usr/local/include or <sdk>/include)
@@ -15,10 +12,19 @@ NX_HAILO_DIR = c_src
 PRIV_DIR = $(MIX_APP_PATH)/priv
 NIF_SO_NAME = libnx_hailo.so
 
-ifeq ($(HAILO_TARGET),hailo8)
+# The Hailo-8 family speaks the VDevice/InferVStreams API of the hailort
+# "hailo8" branch; Hailo-10 and Hailo-15 speak the InferModel API of HailoRT v5.
+# Anything else is a typo, and silently building the wrong backend produces a
+# NIF that loads and then fails at inference time.
+HAILO8_TARGETS = hailo8 hailo8l hailo8r
+HAILO10_TARGETS = hailo10 hailo10h hailo15 hailo15h hailo15l
+
+ifneq (,$(filter $(HAILO_TARGET),$(HAILO8_TARGETS)))
   NIF_SOURCE = $(NX_HAILO_DIR)/hailo8.cpp
-else
+else ifneq (,$(filter $(HAILO_TARGET),$(HAILO10_TARGETS)))
   NIF_SOURCE = $(NX_HAILO_DIR)/hailo10.cpp
+else
+  $(error Unknown HAILO_TARGET "$(HAILO_TARGET)". Expected one of: $(HAILO8_TARGETS) $(HAILO10_TARGETS))
 endif
 
 HAILORT_LDFLAGS = -lhailort
@@ -57,7 +63,7 @@ $(PRIV_DIR)/$(NIF_SO_NAME): $(NX_HAILO_CACHE_SO)
 	@ if [ "${MIX_BUILD_EMBEDDED}" = "true" ]; then \
 		cp -a $(abspath $(NX_HAILO_CACHE_SO)) $(PRIV_DIR)/$(NIF_SO_NAME) ; \
 	else \
-		ln -sf ../$(NX_HAILO_CACHE_SO) $(PRIV_DIR)/$(NIF_SO_NAME) ; \
+		ln -sf $(abspath $(NX_HAILO_CACHE_SO)) $(PRIV_DIR)/$(NIF_SO_NAME) ; \
 	fi
 
 $(NX_HAILO_CACHE_SO): $(OBJECT)
