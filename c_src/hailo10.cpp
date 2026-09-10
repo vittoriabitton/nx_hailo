@@ -22,26 +22,17 @@ struct InferModelResource {
   std::shared_ptr<InferModel> infer_model;
   // HailoRT v5: configure() returns ConfiguredInferModel by value (not shared_ptr)
   std::unique_ptr<ConfiguredInferModel> configured_model;
-};
 
-static void vdevice_resource_dtor(ErlNifEnv *env, void *obj) {
-  (void)env;
-  auto *res = static_cast<VDeviceResource *>(obj);
-  res->vdevice.reset();
-  delete res;
-}
-
-static void infer_model_resource_dtor(ErlNifEnv *env, void *obj) {
-  (void)env;
-  auto *res = static_cast<InferModelResource *>(obj);
-  if (res->configured_model) {
-    (void)res->configured_model->shutdown();
+  // Called by fine right before ~InferModelResource(). Draining the model here
+  // means in-flight transfers are cancelled while the InferModel and VDevice
+  // this resource owns are still alive.
+  void destructor(ErlNifEnv *env) {
+    (void)env;
+    if (configured_model) {
+      (void)configured_model->shutdown();
+    }
   }
-  res->configured_model.reset();
-  res->infer_model.reset();
-  res->vdevice.reset();
-  delete res;
-}
+};
 
 FINE_RESOURCE(VDeviceResource);
 FINE_RESOURCE(InferModelResource);

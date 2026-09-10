@@ -29,28 +29,10 @@ struct InferPipelineResource {
       network_group; // Keep a reference to network_group
 };
 
-// Destructor for VDeviceResource
-void vdevice_resource_dtor(ErlNifEnv *env, void *obj) {
-  auto *res = static_cast<VDeviceResource *>(obj);
-  res->vdevice.reset();
-  delete res;
-}
-
-// Destructor for NetworkGroupResource
-void network_group_resource_dtor(ErlNifEnv *env, void *obj) {
-  auto *res = static_cast<NetworkGroupResource *>(obj);
-  res->network_group.reset();
-  res->vdevice.reset();
-  delete res;
-}
-
-// Destructor for InferPipelineResource
-void infer_pipeline_resource_dtor(ErlNifEnv *env, void *obj) {
-  auto *res = static_cast<InferPipelineResource *>(obj);
-  res->pipeline.reset();
-  res->network_group.reset();
-  delete res;
-}
+// The members above are all owning smart pointers, so ~T() — which fine calls
+// when the resource is garbage collected — is enough to release everything.
+// A resource only needs an explicit `destructor(ErlNifEnv *)` member when it
+// has to run something before its members are torn down.
 
 // Define resource types using FINE macros
 FINE_RESOURCE(VDeviceResource);
