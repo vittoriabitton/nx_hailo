@@ -14,6 +14,7 @@ defmodule NxHailo.MixProject do
       version: @version,
       elixir: "~> 1.18",
       start_permanent: Mix.env() == :prod,
+      elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
       aliases: aliases(),
       compilers: compilers(),
@@ -27,6 +28,9 @@ defmodule NxHailo.MixProject do
       extra_applications: [:logger, :runtime_tools]
     ]
   end
+
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_env), do: ["lib"]
 
   # Run "mix help deps" to learn about dependencies.
   defp deps do
@@ -50,10 +54,11 @@ defmodule NxHailo.MixProject do
   end
 
   # Building the NIF needs HailoRT headers, which only exist on a machine set up
-  # for a Hailo device. Set NX_HAILO_SKIP_NIF=1 to skip it and work on the
-  # Elixir side — including running the test suite — anywhere else.
+  # for a Hailo device. The suite covers the Elixir side only, so :test skips the
+  # build and `mix test` runs anywhere; set NX_HAILO_SKIP_NIF to skip it in other
+  # environments too.
   defp compilers do
-    if System.get_env("NX_HAILO_SKIP_NIF") do
+    if System.get_env("NX_HAILO_SKIP_NIF") || Mix.env() == :test do
       Mix.compilers()
     else
       [:elixir_make] ++ Mix.compilers()
