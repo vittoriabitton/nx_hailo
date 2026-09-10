@@ -23,7 +23,9 @@ erl_crash.dump
 # Compiled NIF objects, keyed by target.
 /cache
 
-# Models downloaded into priv/, and the class labels generated next to them.
+# Build output and downloaded models under priv/. The NIF normally lands in
+# _build, but older builds linked it here too.
+/priv/*.so
 /priv/*.hef
 /priv/*.marker
 /priv/*_classes.json
