@@ -108,8 +108,9 @@ fine::Atom format_flags_to_atom(hailo_format_flags_t flags) {
       "unknown_flags"); // Default if no specific known flag matches
 }
 
-// NIF function to create a VDevice
-fine::Term create_vdevice(ErlNifEnv *env) {
+// Helper, not a NIF: create_vdevice/1 below falls back to it when no options
+// are given.
+static fine::Term create_default_vdevice(ErlNifEnv *env) {
   auto vdevice_expected = hailort::VDevice::create();
   if (!vdevice_expected) {
     return fine_error_string(env,
@@ -120,57 +121,6 @@ fine::Term create_vdevice(ErlNifEnv *env) {
 
   auto resource = fine::make_resource<VDeviceResource>();
   resource->vdevice = std::move(vdevice);
-  return fine_ok(env, resource);
-}
-
-// NIF function to configure a network group using an existing VDevice
-fine::Term configure_network_group(ErlNifEnv *env,
-                                   fine::Term vdevice_resource_term,
-                                   fine::Term hef_path_term) {
-  fine::ResourcePtr<VDeviceResource> vdevice_res;
-  try {
-    vdevice_res = fine::decode<fine::ResourcePtr<VDeviceResource>>(
-        env, vdevice_resource_term);
-  } catch (const std::exception &e) {
-    return fine_error_string(env, "Invalid VDevice resource");
-  }
-
-  std::string hef_path;
-  try {
-    hef_path = fine::decode<std::string>(env, hef_path_term);
-  } catch (const std::exception &e) {
-    return fine_error_string(env, "Invalid HEF file path");
-  }
-
-  auto hef = hailort::Hef::create(hef_path);
-  if (!hef) {
-    return fine_error_string(env, "Failed to load HEF file: " +
-                                      std::to_string(hef.status()));
-  }
-
-  auto configure_params =
-      vdevice_res->vdevice->create_configure_params(hef.value());
-  if (!configure_params) {
-    return fine_error_string(env,
-                             "Failed to create configure params: " +
-                                 std::to_string(configure_params.status()));
-  }
-
-  auto network_groups =
-      vdevice_res->vdevice->configure(hef.value(), configure_params.value());
-  if (!network_groups) {
-    return fine_error_string(env, "Failed to configure network groups: " +
-                                      std::to_string(network_groups.status()));
-  }
-
-  if (network_groups->size() != 1) {
-    return fine_error_string(env, "Invalid number of network groups: " +
-                                      std::to_string(network_groups->size()));
-  }
-
-  auto resource = fine::make_resource<NetworkGroupResource>();
-  resource->network_group = std::move(network_groups->at(0));
-  resource->vdevice = vdevice_res->vdevice;
   return fine_ok(env, resource);
 }
 
@@ -555,7 +505,7 @@ fine::Term infer(ErlNifEnv *env, fine::Term pipeline_term,
 fine::Term create_vdevice_opts(ErlNifEnv *env, fine::Term opts_term) {
   ERL_NIF_TERM val;
   if (!enif_get_map_value(env, opts_term, fine::encode(env, fine::Atom("scheduling_algorithm")), &val)) {
-    return create_vdevice(env);
+    return create_default_vdevice(env);
   }
 
   fine::Atom alg = fine::decode<fine::Atom>(env, fine::Term(val));
@@ -667,19 +617,24 @@ fine::Term hailo_version(ErlNifEnv *env) {
   return fine::encode(env, fine::Atom("hailo8"));
 }
 
-// Register NIF functions
+// Register NIF functions.
+//
+// Anything that reaches the device — opening it, loading a HEF, building
+// vstreams, running a frame — blocks for far longer than a scheduler slice is
+// meant to last, so it runs on a dirty IO scheduler. Everything else only reads
+// memory the NIF already holds and stays on a regular scheduler.
 FINE_NIF(hailo_version, 0);
-FINE_NIF(create_pipeline, 1);
-FINE_NIF(get_output_vstream_infos_from_pipeline, 1);
+FINE_NIF(get_input_vstream_infos_from_ng, 0);
+FINE_NIF(get_output_vstream_infos_from_ng, 0);
+FINE_NIF(get_input_vstream_infos_from_pipeline, 0);
+FINE_NIF(get_output_vstream_infos_from_pipeline, 0);
+FINE_NIF(set_scheduler_timeout, 0);
+FINE_NIF(set_scheduler_threshold, 0);
+FINE_NIF(create_pipeline, ERL_NIF_DIRTY_JOB_IO_BOUND);
 // Calls on one pipeline serialize on its lock; calls on different pipelines
 // sharing a round-robin VDevice run concurrently and are interleaved by the
 // HailoRT scheduler.
-FINE_NIF(infer, 2);
-FINE_NIF(get_input_vstream_infos_from_ng, 1);
-FINE_NIF(get_output_vstream_infos_from_ng, 1);
-FINE_NIF(get_input_vstream_infos_from_pipeline, 1);
-FINE_NIF(set_scheduler_timeout, 0);
-FINE_NIF(set_scheduler_threshold, 0);
+FINE_NIF(infer, ERL_NIF_DIRTY_JOB_IO_BOUND);
 
 // create_vdevice/1 and configure_network_group/3 use custom C++ names so
 // they are registered manually below (api.ex always delegates through these).
@@ -688,7 +643,8 @@ static ERL_NIF_TERM create_vdevice_opts_nif(ErlNifEnv *env, int argc,
   return fine::nif(env, argc, argv, create_vdevice_opts);
 }
 static auto __nif_reg_vd1 = fine::Registration::register_nif(
-    {"create_vdevice", fine::nif_arity(create_vdevice_opts), create_vdevice_opts_nif, 0});
+    {"create_vdevice", fine::nif_arity(create_vdevice_opts), create_vdevice_opts_nif,
+     ERL_NIF_DIRTY_JOB_IO_BOUND});
 
 static ERL_NIF_TERM configure_network_group_opts_nif(ErlNifEnv *env, int argc,
                                                       const ERL_NIF_TERM argv[]) {

@@ -174,7 +174,9 @@ static ERL_NIF_TERM build_vstream_info_map_from_stream(
   return map_term;
 }
 
-fine::Term create_vdevice(ErlNifEnv *env) {
+// Helper, not a NIF: create_vdevice/1 below falls back to it when no options
+// are given.
+static fine::Term create_default_vdevice(ErlNifEnv *env) {
   auto vdevice_exp = VDevice::create_shared();
   if (!vdevice_exp) {
     return fine_error_string(env, "Failed to create VDevice: " +
@@ -182,46 +184,6 @@ fine::Term create_vdevice(ErlNifEnv *env) {
   }
   auto resource = fine::make_resource<VDeviceResource>();
   resource->vdevice = std::move(vdevice_exp.value());
-  return fine_ok(env, resource);
-}
-
-fine::Term configure_network_group(ErlNifEnv *env,
-                                   fine::Term vdevice_resource_term,
-                                   fine::Term hef_path_term) {
-  fine::ResourcePtr<VDeviceResource> vdevice_res;
-  try {
-    vdevice_res = fine::decode<fine::ResourcePtr<VDeviceResource>>(env, vdevice_resource_term);
-  } catch (const std::exception &e) {
-    return fine_error_string(env, "Invalid VDevice resource");
-  }
-  std::string hef_path;
-  try {
-    hef_path = fine::decode<std::string>(env, hef_path_term);
-  } catch (const std::exception &e) {
-    return fine_error_string(env, "Invalid HEF file path");
-  }
-  auto infer_model_exp = vdevice_res->vdevice->create_infer_model(hef_path);
-  if (!infer_model_exp) {
-    return fine_error_string(env, "Failed to create InferModel: " +
-                                  std::to_string(infer_model_exp.status()));
-  }
-  std::shared_ptr<InferModel> infer_model = infer_model_exp.value();
-  auto configured_exp = infer_model->configure();
-  if (!configured_exp) {
-    return fine_error_string(env, "Failed to configure InferModel: " +
-                                  std::to_string(configured_exp.status()));
-  }
-  auto configured_model =
-      std::make_unique<ConfiguredInferModel>(std::move(configured_exp.value()));
-  hailo_status act_status = configured_model->activate();
-  if (act_status != HAILO_SUCCESS && act_status != HAILO_INVALID_OPERATION) {
-    return fine_error_string(env, "Failed to activate model: " +
-                                  std::to_string(act_status));
-  }
-  auto resource = fine::make_resource<InferModelResource>();
-  resource->vdevice = vdevice_res->vdevice;
-  resource->infer_model = std::move(infer_model);
-  resource->configured_model = std::move(configured_model);
   return fine_ok(env, resource);
 }
 
@@ -415,7 +377,7 @@ fine::Term configure_network_group_opts(ErlNifEnv *env,
 fine::Term create_vdevice_opts(ErlNifEnv *env, fine::Term opts_term) {
   ERL_NIF_TERM val;
   if (!enif_get_map_value(env, opts_term, fine::encode(env, fine::Atom("scheduling_algorithm")), &val)) {
-    return create_vdevice(env);
+    return create_default_vdevice(env);
   }
 
   fine::Atom alg = fine::decode<fine::Atom>(env, fine::Term(val));
@@ -460,17 +422,21 @@ fine::Term hailo_version(ErlNifEnv *env) {
   return fine::encode(env, fine::Atom("hailo10"));
 }
 
-// Register NIF functions
+// Register NIF functions.
+//
+// Anything that reaches the device — opening it, loading a HEF, running a
+// frame — blocks for far longer than a scheduler slice is meant to last, so it
+// runs on a dirty IO scheduler. Everything else only reads memory the NIF
+// already holds and stays on a regular scheduler.
 FINE_NIF(hailo_version, 0);
-FINE_NIF(create_pipeline, 1);
-FINE_NIF(get_output_vstream_infos_from_pipeline, 1);
-// infer: ERL_NIF_DIRTY_JOB_IO_BOUND (flags=2)
-FINE_NIF(infer, 2);
-FINE_NIF(get_input_vstream_infos_from_ng, 1);
-FINE_NIF(get_output_vstream_infos_from_ng, 1);
-FINE_NIF(get_input_vstream_infos_from_pipeline, 1);
+FINE_NIF(create_pipeline, 0);
+FINE_NIF(get_input_vstream_infos_from_ng, 0);
+FINE_NIF(get_output_vstream_infos_from_ng, 0);
+FINE_NIF(get_input_vstream_infos_from_pipeline, 0);
+FINE_NIF(get_output_vstream_infos_from_pipeline, 0);
 FINE_NIF(set_scheduler_timeout, 0);
 FINE_NIF(set_scheduler_threshold, 0);
+FINE_NIF(infer, ERL_NIF_DIRTY_JOB_IO_BOUND);
 
 // create_vdevice/1 and configure_network_group/3 use custom C++ names so
 // they are registered manually below (api.ex always delegates through these).
@@ -487,6 +453,7 @@ static ERL_NIF_TERM create_vdevice_opts_nif(ErlNifEnv *env, int argc,
   return fine::nif(env, argc, argv, create_vdevice_opts);
 }
 static auto __nif_reg_vd1 = fine::Registration::register_nif(
-    {"create_vdevice", fine::nif_arity(create_vdevice_opts), create_vdevice_opts_nif, 0});
+    {"create_vdevice", fine::nif_arity(create_vdevice_opts), create_vdevice_opts_nif,
+     ERL_NIF_DIRTY_JOB_IO_BOUND});
 
 FINE_INIT("Elixir.NxHailo.NIF");
