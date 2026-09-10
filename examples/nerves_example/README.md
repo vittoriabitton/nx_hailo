@@ -1,33 +1,45 @@
 # NervesExample
 
-**TODO: Add description**
+YOLOv8 object detection on a Raspberry Pi 5 with a Hailo AI HAT, built with
+[Nerves](https://nerves-project.org/).
 
-## Targets
+The firmware carries `nx_hailo` and the handful of functions the demo needs —
+loading the model, opening the camera, preparing frames, drawing boxes. A
+Livebook attached to the running device drives them; see
+[`livebooks/remote_device_inference.livemd`](livebooks/remote_device_inference.livemd).
 
-Nerves applications produce images for hardware targets based on the
-`MIX_TARGET` environment variable. If `MIX_TARGET` is unset, `mix` builds an
-image that runs on the host (e.g., your laptop). This is useful for executing
-logic tests, running utilities, and debugging. Other targets are represented by
-a short name like `rpi3` that maps to a Nerves system image for that platform.
-All of this logic is in the generated `mix.exs` and may be customized. For more
-information about targets see:
+## What you need
 
-https://hexdocs.pm/nerves/supported-targets.html
+- A Raspberry Pi 5 with a Hailo-8 accelerator (`config/config.exs` sets
+  `config :nx_hailo, :target, "hailo8"` — change it if yours differs)
+- A camera the Pi exposes at `/dev/video*`
+- An SSH public key in `~/.ssh`, which the build uses to authorize firmware
+  updates and the IEx prompt
 
-## Getting Started
+## Build and burn
 
-To start your Nerves app:
-  * `export MIX_TARGET=my_target` or prefix every command with
-    `MIX_TARGET=my_target`. For example, `MIX_TARGET=rpi3`
-  * Install dependencies with `mix deps.get`
-  * Create firmware with `mix firmware`
-  * Burn to an SD card with `mix burn`
+```shell
+export MIX_TARGET=rpi5
+mix deps.get
+mix firmware
+mix burn
+```
+
+Later updates can go over the network instead of the SD card:
+
+```shell
+mix upload nerves.local
+```
+
+## Run the demo
+
+Put a compiled model and its class labels in `priv/` on the device — the
+`download_models` notebook in the `nx_hailo` repository does both — then follow
+the setup steps in
+[`livebooks/remote_device_inference.livemd`](livebooks/remote_device_inference.livemd).
 
 ## Learn more
 
-  * Official docs: https://hexdocs.pm/nerves/getting-started.html
-  * Official website: https://nerves-project.org/
-  * Forum: https://elixirforum.com/c/nerves-forum
-  * Elixir Slack #nerves channel: https://elixir-slack.community/
-  * Elixir Discord #nerves channel: https://discord.gg/elixir
-  * Source: https://github.com/nerves-project/nerves
+- Nerves docs: https://hexdocs.pm/nerves/getting-started.html
+- Supported targets: https://hexdocs.pm/nerves/supported-targets.html
+- Elixir Slack `#nerves`: https://elixir-slack.community/
