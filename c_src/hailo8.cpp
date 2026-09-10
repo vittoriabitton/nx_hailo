@@ -218,7 +218,6 @@ ERL_NIF_TERM
 build_detailed_vstream_info_map(ErlNifEnv *env,
                                 const hailo_vstream_info_t &vstream_info) {
   ERL_NIF_TERM map_term = enif_make_new_map(env);
-  uint32_t calculated_frame_size = 0;
 
   enif_make_map_put(env, map_term, fine::encode(env, fine::Atom("name")),
                     fine::encode(env, std::string(vstream_info.name)),
@@ -281,31 +280,6 @@ build_detailed_vstream_info_map(ErlNifEnv *env,
                       nms_shape_map_erl, &map_term);
     enif_make_map_put(env, map_term, fine::encode(env, fine::Atom("shape")),
                       fine::encode(env, fine::Atom("nil")), &map_term);
-
-    uint32_t num_detections_for_size_calc = 0;
-    if (vstream_info.format.order == HAILO_FORMAT_ORDER_HAILO_NMS_BY_CLASS ||
-        vstream_info.format.order == HAILO_FORMAT_ORDER_HAILO_NMS_ON_CHIP) {
-      num_detections_for_size_calc =
-          vstream_info.nms_shape.number_of_classes *
-          vstream_info.nms_shape.max_bboxes_per_class;
-    } else if (vstream_info.format.order ==
-               HAILO_FORMAT_ORDER_HAILO_NMS_BY_SCORE) {
-      num_detections_for_size_calc = vstream_info.nms_shape.max_bboxes_total;
-    } else {
-      num_detections_for_size_calc =
-          vstream_info.nms_shape.number_of_classes *
-          vstream_info.nms_shape.max_bboxes_per_class;
-    }
-    uint32_t elements_per_detection = 6;
-    if (vstream_info.format.type == HAILO_FORMAT_TYPE_FLOAT32) {
-      calculated_frame_size =
-          num_detections_for_size_calc * elements_per_detection * sizeof(float);
-    } else if (vstream_info.format.type == HAILO_FORMAT_TYPE_UINT8) {
-      calculated_frame_size = num_detections_for_size_calc *
-                              elements_per_detection * sizeof(uint8_t);
-    } else {
-      calculated_frame_size = 0;
-    }
   } else {
     ERL_NIF_TERM shape_map_erl = enif_make_new_map(env);
     enif_make_map_put(
@@ -324,9 +298,13 @@ build_detailed_vstream_info_map(ErlNifEnv *env,
                       shape_map_erl, &map_term);
     enif_make_map_put(env, map_term, fine::encode(env, fine::Atom("nms_shape")),
                       fine::encode(env, fine::Atom("nil")), &map_term);
-    calculated_frame_size = hailort::HailoRTCommon::get_frame_size(
-        vstream_info.shape, vstream_info.format);
   }
+
+  // This overload understands both layouts, including the per-class detection
+  // counts interleaved into an NMS frame. Computing the NMS size by hand as
+  // detections * 6 * sizeof(type) ignores those counts and overstates it.
+  uint32_t calculated_frame_size =
+      hailort::HailoRTCommon::get_frame_size(vstream_info, vstream_info.format);
 
   enif_make_map_put(
       env, map_term, fine::encode(env, fine::Atom("frame_size")),
