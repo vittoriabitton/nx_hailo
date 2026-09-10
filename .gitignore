@@ -19,9 +19,16 @@ erl_crash.dump
 
 # Temporary files, for example, from tests.
 /tmp/
+
+# Compiled NIF objects, keyed by target.
 /cache
-# Downloaded models, generated labels, and compiled NIF artifacts
-/priv/
+
+# Models downloaded into priv/, and the class labels generated next to them.
+/priv/*.hef
+/priv/*.marker
+/priv/*_classes.json
+
 hailort.log
 .envrc
 .env
+.DS_Store

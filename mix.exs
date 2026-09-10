@@ -3,6 +3,8 @@ defmodule NxHailo.MixProject do
 
   @app :nx_hailo
   @version "0.1.0"
+  @source_url "https://github.com/vittoriabitton/nx_hailo"
+  @description "Run neural networks on Hailo AI accelerators from Elixir"
 
   # The Hailo-8 family and the Hailo-10/15 family need different HailoRT
   # branches and different NIF backends. The Makefile makes the same split.
@@ -13,6 +15,11 @@ defmodule NxHailo.MixProject do
       app: @app,
       version: @version,
       elixir: "~> 1.18",
+      name: "NxHailo",
+      description: @description,
+      source_url: @source_url,
+      package: package(),
+      docs: docs(),
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
       deps: deps(),
@@ -37,7 +44,34 @@ defmodule NxHailo.MixProject do
     [
       {:nx, "~> 0.11"},
       {:elixir_make, "~> 0.6", runtime: false},
-      {:fine, "~> 0.1.0", runtime: false}
+      {:fine, "~> 0.1.0", runtime: false},
+      {:ex_doc, "~> 0.34", only: :dev, runtime: false}
+    ]
+  end
+
+  defp package do
+    [
+      licenses: ["MIT"],
+      links: %{"GitHub" => @source_url},
+      files: ~w(lib c_src Makefile .formatter.exs mix.exs README.md LICENSE)
+    ]
+  end
+
+  defp docs do
+    [
+      main: "readme",
+      extras: ["README.md"],
+      source_ref: "v#{@version}",
+      groups_for_modules: [
+        Parsers: [NxHailo.OutputParser, NxHailo.Parsers.YoloV8],
+        "Lower-level API": [
+          NxHailo.API,
+          NxHailo.API.NetworkGroup,
+          NxHailo.API.Pipeline,
+          NxHailo.API.VDevice,
+          NxHailo.API.VStreamInfo
+        ]
+      ]
     ]
   end
 

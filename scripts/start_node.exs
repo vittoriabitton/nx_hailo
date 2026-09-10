@@ -95,7 +95,8 @@ end
 
 short_names? = opts[:short_names] == true
 
-node_ip = opts[:node_ip] || if is_nil(opts[:node_name]) and not short_names?, do: detect_eth0_ip.()
+node_ip =
+  opts[:node_ip] || if is_nil(opts[:node_name]) and not short_names?, do: detect_eth0_ip.()
 
 if not short_names? and is_nil(node_ip) and is_nil(opts[:node_name]) do
   Mix.raise(
@@ -186,28 +187,33 @@ case Node.start(node_atom, dist) do
     Mix.raise("could not start node #{node_name}: #{inspect(reason)}")
 end
 
+attach_note =
+  if short_names? do
+    """
+    Short names: attaching from the Livebook desktop app should just work. If the host
+    part is not in DNS, add it to your machine's /etc/hosts, e.g.
+      192.168.2.4 #{node_name |> String.split("@") |> List.last()}
+    """
+  else
+    """
+    Long names: start Livebook from a terminal, or attaching will usually fail:
+      export LIVEBOOK_DISTRIBUTION=name LIVEBOOK_COOKIE=#{cookie}
+      export LIVEBOOK_NODE="livebook@$(hostname -f 2>/dev/null || hostname)"
+      livebook server
+    """
+  end
+
 IO.puts("""
 Project:      #{project_dir}
 Node:         #{node_name}
 Distribution: #{if short_names?, do: "short names", else: "long names"}
-Cookie:       #{cookie}
+Cookie:       #{cookie}#{if opts[:cookie], do: "", else: " (generated, pass --cookie to choose one)"}
 Hailo target: #{hailo_target}
 Download dir: #{download_dir}
 
-Connect Livebook via:
-  Runtime -> Attached Node
-  Node:   #{node_name}
-  Cookie: #{cookie}
-#{if short_names?, do: """
-Note: short names — default Livebook app attach should work. If the host part is not in DNS,
-add to your Mac's /etc/hosts, e.g. 192.168.2.4 <short-hostname>
-""", else: """
-Note: long names — start Livebook from a terminal with:
-  export LIVEBOOK_DISTRIBUTION=name LIVEBOOK_COOKIE=#{cookie}
-  export LIVEBOOK_NODE="livebook@$(hostname -f 2>/dev/null || hostname)"
-  livebook server
-(or the GUI will often fail to attach).
-"""}
+Connect Livebook via Runtime -> Attached Node, using the node and cookie above.
+
+#{attach_note}
 Press Ctrl+C twice to stop this node.
 """)
 
