@@ -10,7 +10,7 @@
 # Options:
 #   --node-ip       Node IP. Defaults to the eth0 IP.
 #   --node-name     Full node name. Defaults to <whoami>@<node-ip>.
-#   --cookie        Erlang cookie. Defaults to the node base name (part before @).
+#   --cookie        Erlang cookie. Defaults to a freshly generated random one.
 #   --hailo-target  Target device. Defaults to hailo10.
 #   --download-dir  Directory for downloaded models. Defaults to <project>/priv.
 #   --short-names   Use Erlang short names (Node.start(..., :shortnames)). Use this when
@@ -26,7 +26,7 @@ Usage: ./scripts/start_node.exs [opts]
 Options:
   --node-ip IP            Node IP. Defaults to the eth0 IP (ignored for default name if --short-names).
   --node-name NAME        Full node name. Defaults to <whoami>@<node-ip> or <whoami>@<short-hostname>.
-  --cookie COOKIE         Erlang cookie. Defaults to the node base name.
+  --cookie COOKIE         Erlang cookie. Defaults to a freshly generated random one.
   --hailo-target TARGET   Target device. Defaults to hailo10.
   --download-dir DIR      Directory for downloaded models. Defaults to <project>/priv.
   --short-names           Short names for Livebook GUI attach (see script header).
@@ -136,7 +136,10 @@ if short_names? do
       Mix.raise("invalid --node-name, expected name@host")
   end
 end
-cookie = opts[:cookie] || node_name |> String.split("@", parts: 2) |> hd()
+
+# Anyone who can reach epmd on this device and guess the cookie can run code on
+# it, so generate one rather than defaulting to something guessable.
+cookie = opts[:cookie] || Base.url_encode64(:crypto.strong_rand_bytes(24), padding: false)
 hailo_target = opts[:hailo_target] || "hailo10"
 download_dir = opts[:download_dir] || Path.join(project_dir, "priv")
 
@@ -168,6 +171,10 @@ end
 
 dist = if short_names?, do: :shortnames, else: :longnames
 
+# Set the cookie before distribution starts, so the node is never briefly
+# reachable with the default one.
+:erlang.set_cookie(cookie_atom)
+
 case Node.start(node_atom, dist) do
   {:ok, _pid} ->
     :ok
@@ -178,8 +185,6 @@ case Node.start(node_atom, dist) do
   {:error, reason} ->
     Mix.raise("could not start node #{node_name}: #{inspect(reason)}")
 end
-
-:erlang.set_cookie(node(), cookie_atom)
 
 IO.puts("""
 Project:      #{project_dir}
