@@ -5,6 +5,7 @@
 #include <fine.hpp>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 #include <chrono>
@@ -22,6 +23,9 @@ struct InferModelResource {
   std::shared_ptr<InferModel> infer_model;
   // HailoRT v5: configure() returns ConfiguredInferModel by value (not shared_ptr)
   std::unique_ptr<ConfiguredInferModel> configured_model;
+  // ConfiguredInferModel::run() is not reentrant, and one resource is shared by
+  // every Elixir process holding the model, so infer/2 takes this lock.
+  std::mutex infer_lock;
 
   // Called by fine right before ~InferModelResource(). Draining the model here
   // means in-flight transfers are cancelled while the InferModel and VDevice
@@ -325,6 +329,8 @@ fine::Term infer(ErlNifEnv *env, fine::Term pipeline_term,
     output_buffers[name].resize(frame_size);
     buffers[name] = MemoryView(output_buffers[name].data(), frame_size);
   }
+
+  std::lock_guard<std::mutex> guard(res->infer_lock);
 
   auto bindings_exp = res->configured_model->create_bindings(buffers);
   if (!bindings_exp) {

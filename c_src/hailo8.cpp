@@ -6,6 +6,7 @@
 #include <chrono>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -27,6 +28,9 @@ struct InferPipelineResource {
   std::shared_ptr<hailort::InferVStreams> pipeline;
   std::shared_ptr<hailort::ConfiguredNetworkGroup>
       network_group; // Keep a reference to network_group
+  // InferVStreams::infer() is not reentrant, and one resource is shared by
+  // every Elixir process holding the model, so infer/2 takes this lock.
+  std::mutex infer_lock;
 };
 
 // The members above are all owning smart pointers, so ~T() — which fine calls
@@ -546,6 +550,8 @@ fine::Term infer(ErlNifEnv *env, fine::Term pipeline_term,
     output_data_mem_views.emplace(
         name, hailort::MemoryView(output_buffer.data(), output_buffer.size()));
   }
+  std::lock_guard<std::mutex> guard(pipeline_res->infer_lock);
+
   hailo_status status = pipeline_res->pipeline->infer(
       input_data_mem_views, output_data_mem_views, frames_count);
   if (status != HAILO_SUCCESS) {
@@ -687,10 +693,9 @@ fine::Term hailo_version(ErlNifEnv *env) {
 FINE_NIF(hailo_version, 0);
 FINE_NIF(create_pipeline, 1);
 FINE_NIF(get_output_vstream_infos_from_pipeline, 1);
-// infer: ERL_NIF_DIRTY_JOB_IO_BOUND (flags=2).
-// Note: InferVStreams::infer() is not reentrant per-pipeline; concurrent
-// Elixir processes can call infer() on different pipelines sharing the same
-// VDevice (with ROUND_ROBIN scheduler), but a single pipeline serializes.
+// Calls on one pipeline serialize on its lock; calls on different pipelines
+// sharing a round-robin VDevice run concurrently and are interleaved by the
+// HailoRT scheduler.
 FINE_NIF(infer, 2);
 FINE_NIF(get_input_vstream_infos_from_ng, 1);
 FINE_NIF(get_output_vstream_infos_from_ng, 1);
