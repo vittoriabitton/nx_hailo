@@ -26,7 +26,6 @@ The HailoRT scheduler time-slices the neural engine between the two pipelines au
 ```elixir
 alias NxHailo.API
 priv = to_string(:code.priv_dir(:nx_hailo))
-priv = "/home/valente/nx_hailo/priv"
 
 # A single VDevice shared by both models. round_robin lets the HailoRT scheduler
 # interleave inference requests from both pipelines on the same hardware.
@@ -80,83 +79,85 @@ evision_resize_and_pad =
 
 ```elixir
 defmodule YOLODraw do
-  @font_face Evision.Constant.cv_FONT_HERSHEY_SIMPLEX()
-  @font_size 0.5
+  @moduledoc """
+  Draws detections onto an Evision `Mat`.
+
+  Coordinates have to be in pixels, so run detections through
+  `NxHailo.Parsers.YoloV8.postprocess/2` first.
+  """
+
+  alias NxHailo.Palette
+
+  @font Evision.Constant.cv_FONT_HERSHEY_SIMPLEX()
+  @line_type Evision.Constant.cv_LINE_AA()
+  @filled -1
+
+  @label_scale 0.5
+  @caption_scale 0.7
   @stroke_width 2
-  @text_padding 5
+  @padding 5
 
-  def draw_detected_objects(mat, detected_objects, label) do
-    {fh, fw, _} = Evision.Mat.shape(mat)
-    mat = draw_label_box(mat, label, fw, fh)
-    mat = Enum.reduce(detected_objects, mat, &draw_box(&2, &1))
-    Enum.reduce(detected_objects, mat, &draw_label_text(&2, &1))
+  @white {255, 255, 255}
+  @black {0, 0, 0}
+  @blue {255, 0, 0}
+
+  def draw_detected_objects(mat, detections, caption) do
+    # Boxes first, then labels, so a label is never covered by the box of a
+    # detection drawn after it.
+    mat = Enum.reduce(detections, mat, &draw_box(&2, &1))
+    mat = Enum.reduce(detections, mat, &draw_label(&2, &1))
+
+    draw_caption(mat, caption)
   end
 
-  defp draw_label_box(mat, label, w, h) do
-    {{tw, th}, _} = Evision.getTextSize(label, @font_face, 0.7, 1)
-    bw = tw + 2 * @text_padding
-    bh = th + 2 * @text_padding
-
-    mat
-    |> Evision.rectangle({w - bw, h - bh}, {w, h}, {255, 0, 0}, thickness: -1)
-    |> Evision.putText(label, {w - bw + @text_padding, h - @text_padding},
-      @font_face, 0.7, {255, 255, 255},
-      thickness: 1, lineType: Evision.Constant.cv_LINE_AA()
+  defp draw_box(mat, detection) do
+    Evision.rectangle(
+      mat,
+      {detection.xmin, detection.ymin},
+      {detection.xmax, detection.ymax},
+      Palette.bgr(detection.class_id),
+      thickness: @stroke_width
     )
   end
 
-  defp draw_box(mat, obj) do
-    Evision.rectangle(mat, {obj.xmin, obj.ymin}, {obj.xmax, obj.ymax},
-      class_color(obj.class_id), thickness: @stroke_width)
-  end
+  defp draw_label(mat, detection) do
+    text = "#{detection.class_name} #{round(detection.score * 100)}%"
+    {{width, height}, baseline} = Evision.getTextSize(text, @font, @label_scale, 1)
 
-  defp draw_label_text(mat, obj) do
-    label = "#{obj.class_name} #{round(obj.score * 100)}%"
-    {{tw, th}, baseline} = Evision.getTextSize(label, @font_face, @font_size, 1)
-    bg_tl = {obj.xmin, max(obj.ymin - th - 2 * @text_padding - baseline, 0)}
-    bg_br = {obj.xmin + tw + 2 * @text_padding, max(obj.ymin - baseline, 0)}
+    top_left = {detection.xmin, max(detection.ymin - height - 2 * @padding - baseline, 0)}
+    bottom_right = {detection.xmin + width + 2 * @padding, max(detection.ymin - baseline, 0)}
+    baseline_at = max(detection.ymin - @padding - baseline, height + @padding)
 
     mat
-    |> Evision.rectangle(bg_tl, bg_br, {0, 0, 0}, thickness: -1)
-    |> Evision.putText(
-      label,
-      {obj.xmin + @text_padding, max(obj.ymin - @text_padding - baseline, th + @text_padding)},
-      @font_face, @font_size, {255, 255, 255},
-      thickness: 1, lineType: Evision.Constant.cv_LINE_AA()
+    |> Evision.rectangle(top_left, bottom_right, @black, thickness: @filled)
+    |> put_text(text, {detection.xmin + @padding, baseline_at}, @label_scale)
+  end
+
+  defp draw_caption(mat, caption) do
+    # Evision reports shape as {height, width, channels}.
+    {frame_height, frame_width, _channels} = Evision.Mat.shape(mat)
+    {{width, height}, _baseline} = Evision.getTextSize(caption, @font, @caption_scale, 1)
+
+    box_width = width + 2 * @padding
+    box_height = height + 2 * @padding
+
+    mat
+    |> Evision.rectangle(
+      {frame_width - box_width, frame_height - box_height},
+      {frame_width, frame_height},
+      @blue,
+      thickness: @filled
+    )
+    |> put_text(
+      caption,
+      {frame_width - box_width + @padding, frame_height - @padding},
+      @caption_scale
     )
   end
 
-  hex_to_bgr = fn hex ->
-    hex
-    |> String.replace_prefix("#", "")
-    |> String.to_integer(16)
-    |> then(fn c ->
-      {Bitwise.band(c, 0xFF), Bitwise.band(Bitwise.bsr(c, 8), 0xFF),
-       Bitwise.band(Bitwise.bsr(c, 16), 0xFF)}
-    end)
+  defp put_text(mat, text, origin, scale) do
+    Evision.putText(mat, text, origin, @font, scale, @white, thickness: 1, lineType: @line_type)
   end
-
-  @class_colors [
-    "#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF", "#00FFFF",
-    "#800000", "#008000", "#000080", "#FF00FF", "#800080", "#008080",
-    "#C0C0C0", "#FFA500", "#A52A2A", "#8A2BE2", "#5F9EA0", "#7FFF00",
-    "#D2691E", "#FF7F50", "#6495ED", "#DC143C", "#00FFFF", "#00008B",
-    "#008B8B", "#B8860B", "#A9A9A9", "#006400", "#BDB76B", "#8B008B",
-    "#556B2F", "#FF8C00", "#9932CC", "#8B0000", "#E9967A", "#8FBC8F",
-    "#483D8B", "#2F4F4F", "#00CED1", "#9400D3", "#FF1493", "#00BFFF",
-    "#696969", "#1E90FF", "#B22222", "#FFFAF0", "#228B22", "#FF00FF",
-    "#DCDCDC", "#F8F8FF", "#FFD700", "#DAA520", "#808080", "#ADFF2F",
-    "#F0FFF0", "#FF69B4", "#CD5C5C", "#4B0082", "#FFFFF0", "#F0E68C",
-    "#E6E6FA", "#FFF0F5", "#7CFC00", "#FFFACD", "#ADD8E6", "#F08080",
-    "#E0FFFF", "#FAFAD2", "#D3D3D3", "#90EE90", "#FFB6C1", "#FFA07A",
-    "#20B2AA", "#87CEFA", "#778899", "#B0C4DE", "#FFFFE0", "#00FF7F",
-    "#4682B4", "#D2B48C", "#008080", "#D8BFD8", "#FF6347", "#40E0D0",
-    "#EE82EE", "#F5DEB3", "#FFFFFF", "#F5F5F5"
-  ]
-  |> Enum.with_index(&{&2, hex_to_bgr.(&1)})
-  |> Map.new()
-
-  def class_color(class_idx), do: Map.get(@class_colors, class_idx, {255, 0, 0})
 end
 ```
 
@@ -234,9 +235,9 @@ Results are displayed side-by-side: **yolov8m** (left) vs **yolov8s** (right).
 ```elixir
 padded_shape = 640
 score_threshold = 0.5
-fps_target = div(1000, 50)
+frame_interval_ms = 20
 
-Kino.animate(fps_target, fn _ ->
+Kino.animate(frame_interval_ms, fn _ ->
   raw_frame = capture_frame.()
 
   input_tensor =
@@ -245,9 +246,10 @@ Kino.animate(fps_target, fn _ ->
     |> Nx.reshape({padded_shape, padded_shape, 3})
     |> Nx.backend_transfer()
 
-  # Both infer() calls are submitted concurrently; HailoRT schedules them on
-  # the shared neural engine via round_robin.
-  [{:ok, objects_m}, {:ok, objects_s}] =
+  # Both models are handed a frame at the same time. Each has its own pipeline,
+  # so the two calls really do overlap; the round_robin scheduler decides how
+  # the accelerator is split between them.
+  [objects_m, objects_s] =
     [{model_m, input_m.name, output_m.name}, {model_s, input_s.name, output_s.name}]
     |> Task.async_stream(
       fn {model, in_name, out_name} ->
@@ -268,13 +270,13 @@ Kino.animate(fps_target, fn _ ->
       ordered: true,
       timeout: 5_000
     )
-    |> Enum.map(fn {:ok, result} -> {:ok, result} end)
+    |> Enum.map(fn {:ok, detections} -> detections end)
 
   n_m = length(objects_m)
   n_s = length(objects_s)
 
-  frame_m = YOLODraw.draw_detected_objects(raw_frame, objects_m, "yolov8m  #{n_m} obj")
-  frame_s = YOLODraw.draw_detected_objects(raw_frame, objects_s, "yolov8s  #{n_s} obj")
+  frame_m = YOLODraw.draw_detected_objects(raw_frame, objects_m, "yolov8m  #{n_m} objects")
+  frame_s = YOLODraw.draw_detected_objects(raw_frame, objects_s, "yolov8s  #{n_s} objects")
 
   encode = fn mat ->
     buf = Evision.imencode(".jpg", mat)

@@ -1,17 +1,12 @@
 # Download Hailo Models
 
-```elixir
-Mix.install([
-  {:req, "~> 0.5"},
-  {:yaml_elixir, "~> 2.10"},
-  {:jason, "~> 1.4"}
-])
-```
+## Setup
 
-## Section
+This notebook downloads a compiled model (`.hef`) for **Hailo-8** or **Hailo-10** and writes it,
+along with a JSON file of COCO class labels, into the `nx_hailo` `priv/` directory on the device.
 
-This livebook downloads a compiled model (`.hef`) for **Hailo-8** or **Hailo-10** and generates the COCO class labels
-JSON file into the `nx_hailo` `priv/` directory.
+It runs against the node started by `./scripts/start_node.exs`, which already installs everything
+used below — connect Livebook to it via **Runtime → Attached Node** before running any cell.
 
 Models are sourced from the [Hailo Model Zoo](https://github.com/hailo-ai/hailo_model_zoo).
 Pre-compiled HEF files are hosted on S3; the URLs follow the pattern:
@@ -20,23 +15,27 @@ Pre-compiled HEF files are hosted on S3; the URLs follow the pattern:
 https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/<version>/<device>/<model>.hef
 ```
 
-Supported `device` values include: `hailo8`, `hailo8l`, `hailo8r` (Hailo-8 family), and `hailo10` (Hailo-10).
+Supported `device` values include: `hailo8`, `hailo8l`, `hailo8r` (Hailo-8 family), and `hailo10h` (Hailo-10H).
 Browse the model zoo repo to find the version/device/model combination you need.
 
 ## Configuration
 
 ```elixir
-# Path to the target directory for download.
-# When running via Attached Node, __DIR__ resolves to the local machine path,
-# so we use the DOWNLOAD_DIR env var set by scripts/start_node.sh instead.
-download_dir = System.get_env("DOWNLOAD_DIR") || to_string(:code.priv_dir(:nx_hailo))
+# Where to save the model. __DIR__ would point at the machine running Livebook,
+# not the device, so use the directory start_node.exs was given instead — that is
+# what --download-dir sets.
+download_dir =
+  Application.get_env(:nx_hailo, :download_dir) || to_string(:code.priv_dir(:nx_hailo))
+
 # Model Zoo version (e.g. v2.15.0). Check the repo for the latest.
 version = "v5.1.0"
 # for hailo8l on v4.22.0 use:
 # version = "v2.16.0"
 
-# Device: "hailo8" | "hailo8l" | "hailo8r" (Hailo-8 family) or "hailo10h" (Hailo-10H)
-device = "hailo10"
+# Device: "hailo8" | "hailo8l" | "hailo8r" (Hailo-8 family) or "hailo10h" (Hailo-10H).
+# This is the model zoo's name for the device, which is not always the name the
+# :target configuration uses — Hailo-10H is "hailo10h" here and "hailo10" there.
+device = "hailo10h"
 
 # Model name (no .hef). Examples: "yolov8m", "yolov8s", "yolov5m"
 model_name = "yolov8m"

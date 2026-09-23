@@ -1,54 +1,69 @@
-# HailoAI Remote Demo
-
-## Introduction
-
-This notebook should be run as an attached node to a Nerves system running `nerves_example`, as well as the Hailo AI Hat set up.
-
-After having your Nerves app up and running, run the following commands from its shell:
-
-1. `cmd "epmd -daemon"`
-2. `Node.start(:"nerves@<IP OF THE DEVICE>")`
-3. `Node.set_cookie(:"nerves-cookie")`
+# YOLOv8 on a Nerves device
 
 ## Setup
 
+This notebook runs against a device already running the `nerves_example` firmware,
+with a Hailo accelerator and a camera attached. It drives the functions in
+`NervesExample`, so the code lives in the firmware and only the loop lives here.
+
+Get the model onto the device first — see `livebooks/download_models.livemd` in the
+`nx_hailo` repository.
+
+Then start distribution from the device's IEx prompt, over SSH:
+
 ```elixir
-{:ok, {hailo_model, classes, input_name, output_key}} = NervesExample.load()
-{capture, _device} = NervesExample.find_capture()
+cmd("epmd -daemon")
+Node.start(:"nerves@<IP OF THE DEVICE>")
+Node.set_cookie(:nerves_example_cookie)
+```
+
+Connect this notebook to it with **Runtime → Attached Node**, using that node name
+and cookie.
+
+```elixir
+{:ok, {model, classes, input_name, output_name}} = NervesExample.load()
+{capture, device} = NervesExample.find_capture()
 
 input_shape = {trunc(capture.frame_height), trunc(capture.frame_width)}
 padded_shape = {640, 640}
+
+IO.puts("camera #{device}, frames of #{inspect(input_shape)}")
 ```
 
-## Inference Loop
+## Inference loop
+
+Each frame is padded to a square, resized to what the model takes, and run through
+the accelerator. Detections come back normalized against the padded square, so
+`postprocess/2` maps them onto the camera frame before anything is drawn.
 
 ```elixir
-fps = div(1000, 50)
+frame_interval_ms = 20
+score_threshold = 0.5
 
-Kino.animate(fps, fn _ ->
-  input_image = NxHailo.Video.get_realtime_frame(capture)
-  padded = NervesExample.resize_and_pad(input_image, input_shape, padded_shape)
+Kino.animate(frame_interval_ms, fn _ ->
+  frame = NervesExample.frame(capture)
 
-  %{type: {:u, 8}} =
-    input_tensor =
-    padded
+  input_tensor =
+    frame
+    |> NervesExample.resize_and_pad(input_shape, padded_shape)
     |> Evision.Mat.to_nx()
     |> Nx.backend_transfer()
 
-  {:ok, raw_objects} =
-    NxHailo.infer(
-      hailo_model,
-      %{input_name => input_tensor},
-      NxHailo.Parsers.YoloV8,
+  {:ok, raw_detections} =
+    NxHailo.infer(model, %{input_name => input_tensor}, NxHailo.Parsers.YoloV8,
       classes: classes,
-      key: output_key
+      key: output_name
     )
 
-  detected_objects =
-    raw_objects
-    |> Enum.reject(&(&1.score < 0.0))
+  detections =
+    raw_detections
+    |> Enum.reject(&(&1.score < score_threshold))
     |> NxHailo.Parsers.YoloV8.postprocess(input_shape)
 
-  NervesExample.YOLODraw.draw_detected_objects(input_image, detected_objects, "FPS: #{1000 / fps}")
+  NervesExample.YOLODraw.draw_detected_objects(
+    frame,
+    detections,
+    "#{length(detections)} objects at #{div(1000, frame_interval_ms)} fps"
+  )
 end)
 ```

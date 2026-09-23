@@ -1,0 +1,45 @@
+name: CI
+
+# The NIF needs HailoRT and a Hailo device, neither of which exists on a runner,
+# so CI covers the Elixir side only. MIX_ENV=test skips the NIF build entirely —
+# see compilers/0 in mix.exs. Building the NIF stays a job for the device.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  MIX_ENV: test
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The floor declared in mix.exs, so anything newer that slips in fails here.
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.18"
+          otp-version: "27"
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-mix-${{ hashFiles('mix.lock') }}
+          restore-keys: ${{ runner.os }}-mix-
+
+      - run: mix deps.get
+
+      - run: mix format --check-formatted
+
+      - run: mix compile --warnings-as-errors
+
+      - run: mix test

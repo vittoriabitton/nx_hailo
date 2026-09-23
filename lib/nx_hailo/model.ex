@@ -1,11 +1,12 @@
 defmodule NxHailo.Model do
   @moduledoc """
-  Represents a loaded Hailo model, ready for inference.
-  This struct encapsulates the inference pipeline and associated metadata.
+  A model loaded onto the accelerator and ready to run frames.
+
+  Built by `NxHailo.load/2`. Holds the accelerator resources for as long as it
+  is reachable, and releases them when it is garbage collected.
   """
-  defstruct pipeline: nil,
-            # e.g., HEF filename or a custom model name
-            name: nil
+
+  defstruct pipeline: nil, name: nil
 
   @type t :: %__MODULE__{
           pipeline: NxHailo.API.Pipeline.t(),

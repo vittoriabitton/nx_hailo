@@ -5,6 +5,7 @@
 #include <fine.hpp>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 #include <chrono>
@@ -22,26 +23,20 @@ struct InferModelResource {
   std::shared_ptr<InferModel> infer_model;
   // HailoRT v5: configure() returns ConfiguredInferModel by value (not shared_ptr)
   std::unique_ptr<ConfiguredInferModel> configured_model;
-};
+  // ConfiguredInferModel::run() is not reentrant, and one resource is shared by
+  // every Elixir process holding the model, so infer/2 takes this lock.
+  std::mutex infer_lock;
 
-static void vdevice_resource_dtor(ErlNifEnv *env, void *obj) {
-  (void)env;
-  auto *res = static_cast<VDeviceResource *>(obj);
-  res->vdevice.reset();
-  delete res;
-}
-
-static void infer_model_resource_dtor(ErlNifEnv *env, void *obj) {
-  (void)env;
-  auto *res = static_cast<InferModelResource *>(obj);
-  if (res->configured_model) {
-    (void)res->configured_model->shutdown();
+  // Called by fine right before ~InferModelResource(). Draining the model here
+  // means in-flight transfers are cancelled while the InferModel and VDevice
+  // this resource owns are still alive.
+  void destructor(ErlNifEnv *env) {
+    (void)env;
+    if (configured_model) {
+      (void)configured_model->shutdown();
+    }
   }
-  res->configured_model.reset();
-  res->infer_model.reset();
-  res->vdevice.reset();
-  delete res;
-}
+};
 
 FINE_RESOURCE(VDeviceResource);
 FINE_RESOURCE(InferModelResource);
@@ -179,7 +174,9 @@ static ERL_NIF_TERM build_vstream_info_map_from_stream(
   return map_term;
 }
 
-fine::Term create_vdevice(ErlNifEnv *env) {
+// Helper, not a NIF: create_vdevice/1 below falls back to it when no options
+// are given.
+static fine::Term create_default_vdevice(ErlNifEnv *env) {
   auto vdevice_exp = VDevice::create_shared();
   if (!vdevice_exp) {
     return fine_error_string(env, "Failed to create VDevice: " +
@@ -187,46 +184,6 @@ fine::Term create_vdevice(ErlNifEnv *env) {
   }
   auto resource = fine::make_resource<VDeviceResource>();
   resource->vdevice = std::move(vdevice_exp.value());
-  return fine_ok(env, resource);
-}
-
-fine::Term configure_network_group(ErlNifEnv *env,
-                                   fine::Term vdevice_resource_term,
-                                   fine::Term hef_path_term) {
-  fine::ResourcePtr<VDeviceResource> vdevice_res;
-  try {
-    vdevice_res = fine::decode<fine::ResourcePtr<VDeviceResource>>(env, vdevice_resource_term);
-  } catch (const std::exception &e) {
-    return fine_error_string(env, "Invalid VDevice resource");
-  }
-  std::string hef_path;
-  try {
-    hef_path = fine::decode<std::string>(env, hef_path_term);
-  } catch (const std::exception &e) {
-    return fine_error_string(env, "Invalid HEF file path");
-  }
-  auto infer_model_exp = vdevice_res->vdevice->create_infer_model(hef_path);
-  if (!infer_model_exp) {
-    return fine_error_string(env, "Failed to create InferModel: " +
-                                  std::to_string(infer_model_exp.status()));
-  }
-  std::shared_ptr<InferModel> infer_model = infer_model_exp.value();
-  auto configured_exp = infer_model->configure();
-  if (!configured_exp) {
-    return fine_error_string(env, "Failed to configure InferModel: " +
-                                  std::to_string(configured_exp.status()));
-  }
-  auto configured_model =
-      std::make_unique<ConfiguredInferModel>(std::move(configured_exp.value()));
-  hailo_status act_status = configured_model->activate();
-  if (act_status != HAILO_SUCCESS && act_status != HAILO_INVALID_OPERATION) {
-    return fine_error_string(env, "Failed to activate model: " +
-                                  std::to_string(act_status));
-  }
-  auto resource = fine::make_resource<InferModelResource>();
-  resource->vdevice = vdevice_res->vdevice;
-  resource->infer_model = std::move(infer_model);
-  resource->configured_model = std::move(configured_model);
   return fine_ok(env, resource);
 }
 
@@ -335,6 +292,8 @@ fine::Term infer(ErlNifEnv *env, fine::Term pipeline_term,
     buffers[name] = MemoryView(output_buffers[name].data(), frame_size);
   }
 
+  std::lock_guard<std::mutex> guard(res->infer_lock);
+
   auto bindings_exp = res->configured_model->create_bindings(buffers);
   if (!bindings_exp) {
     return fine_error_string(env, "Failed to create bindings: " +
@@ -418,7 +377,7 @@ fine::Term configure_network_group_opts(ErlNifEnv *env,
 fine::Term create_vdevice_opts(ErlNifEnv *env, fine::Term opts_term) {
   ERL_NIF_TERM val;
   if (!enif_get_map_value(env, opts_term, fine::encode(env, fine::Atom("scheduling_algorithm")), &val)) {
-    return create_vdevice(env);
+    return create_default_vdevice(env);
   }
 
   fine::Atom alg = fine::decode<fine::Atom>(env, fine::Term(val));
@@ -463,17 +422,21 @@ fine::Term hailo_version(ErlNifEnv *env) {
   return fine::encode(env, fine::Atom("hailo10"));
 }
 
-// Register NIF functions
+// Register NIF functions.
+//
+// Anything that reaches the device — opening it, loading a HEF, running a
+// frame — blocks for far longer than a scheduler slice is meant to last, so it
+// runs on a dirty IO scheduler. Everything else only reads memory the NIF
+// already holds and stays on a regular scheduler.
 FINE_NIF(hailo_version, 0);
-FINE_NIF(create_pipeline, 1);
-FINE_NIF(get_output_vstream_infos_from_pipeline, 1);
-// infer: ERL_NIF_DIRTY_JOB_IO_BOUND (flags=2)
-FINE_NIF(infer, 2);
-FINE_NIF(get_input_vstream_infos_from_ng, 1);
-FINE_NIF(get_output_vstream_infos_from_ng, 1);
-FINE_NIF(get_input_vstream_infos_from_pipeline, 1);
+FINE_NIF(create_pipeline, 0);
+FINE_NIF(get_input_vstream_infos_from_ng, 0);
+FINE_NIF(get_output_vstream_infos_from_ng, 0);
+FINE_NIF(get_input_vstream_infos_from_pipeline, 0);
+FINE_NIF(get_output_vstream_infos_from_pipeline, 0);
 FINE_NIF(set_scheduler_timeout, 0);
 FINE_NIF(set_scheduler_threshold, 0);
+FINE_NIF(infer, ERL_NIF_DIRTY_JOB_IO_BOUND);
 
 // create_vdevice/1 and configure_network_group/3 use custom C++ names so
 // they are registered manually below (api.ex always delegates through these).
@@ -490,6 +453,7 @@ static ERL_NIF_TERM create_vdevice_opts_nif(ErlNifEnv *env, int argc,
   return fine::nif(env, argc, argv, create_vdevice_opts);
 }
 static auto __nif_reg_vd1 = fine::Registration::register_nif(
-    {"create_vdevice", fine::nif_arity(create_vdevice_opts), create_vdevice_opts_nif, 0});
+    {"create_vdevice", fine::nif_arity(create_vdevice_opts), create_vdevice_opts_nif,
+     ERL_NIF_DIRTY_JOB_IO_BOUND});
 
 FINE_INIT("Elixir.NxHailo.NIF");
